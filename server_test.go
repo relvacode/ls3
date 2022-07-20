@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -68,30 +69,50 @@ func testSignedRequest(signer Signer, method, path, query string, headers http.H
 
 func TestServer(t *testing.T) {
 	t.Run("InvalidMethod", func(t *testing.T) {
-		uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
+		t.Run("host_style", func(t *testing.T) {
+			uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
 
-		rw := httptest.NewRecorder()
-		srv := &Server{
-			uidGen: func() uuid.UUID {
+			rw := httptest.NewRecorder()
+			srv := NewServer(zap.NewNop(), testSigner, nil, false)
+			srv.uidGen = func() uuid.UUID {
 				return uid
-			},
-		}
-		srv.ServeHTTP(rw, (&http.Request{
-			Method: http.MethodTrace,
-			URL: &url.URL{
-				Path: "/Path/to/Resource",
-			},
-		}).WithContext(context.Background()))
+			}
 
-		assert.Equal(t, http.StatusMethodNotAllowed, rw.Code)
-		assert.Equal(t, "application/xml", rw.Header().Get("Content-Type"))
-		assert.Equal(t, `<?xml version="1.0" encoding="UTF-8"?>
+			req := testSignedRequest(testSigner, http.MethodTrace, "/Path/to/Resource", "", nil, nil)
+			srv.ServeHTTP(rw, req)
+
+			assert.Equal(t, http.StatusMethodNotAllowed, rw.Code)
+			assert.Equal(t, "application/xml", rw.Header().Get("Content-Type"))
+			assert.Equal(t, `<?xml version="1.0" encoding="UTF-8"?>
 <Error>
   <Code>MethodNotAllowed</Code>
   <Message>The specified method is not allowed against this resource.</Message>
   <Resource>/Path/to/Resource</Resource>
   <RequestId>123e4567-e89b-12d3-a456-426614174000</RequestId>
 </Error>`, rw.Body.String())
-	})
+		})
 
+		t.Run("path_style", func(t *testing.T) {
+			uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
+
+			rw := httptest.NewRecorder()
+			srv := NewServer(zap.NewNop(), testSigner, nil, true)
+			srv.uidGen = func() uuid.UUID {
+				return uid
+			}
+
+			req := testSignedRequest(testSigner, http.MethodTrace, "/bucket/Path/to/Resource", "", nil, nil)
+			srv.ServeHTTP(rw, req)
+
+			assert.Equal(t, http.StatusMethodNotAllowed, rw.Code)
+			assert.Equal(t, "application/xml", rw.Header().Get("Content-Type"))
+			assert.Equal(t, `<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>MethodNotAllowed</Code>
+  <Message>The specified method is not allowed against this resource.</Message>
+  <Resource>/Path/to/Resource</Resource>
+  <RequestId>123e4567-e89b-12d3-a456-426614174000</RequestId>
+</Error>`, rw.Body.String())
+		})
+	})
 }

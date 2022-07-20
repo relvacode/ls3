@@ -2,6 +2,7 @@ package ls3
 
 import (
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,11 +10,11 @@ import (
 
 func TestServer_GetBucketLocation(t *testing.T) {
 	rw := httptest.NewRecorder()
-	srv := NewServer(Signer{
+	srv := NewServer(zap.NewNop(), Signer{
 		AccessKeyID:     "0123456789",
 		SecretAccessKey: "0123456789",
 		Region:          "eu-west-2",
-	}, nil)
+	}, nil, false)
 
 	req := testSignedRequest(srv.signer, http.MethodGet, "", "location=", nil, nil)
 	srv.ServeHTTP(rw, req)

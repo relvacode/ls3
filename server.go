@@ -7,6 +7,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -124,7 +125,7 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(bytes.NewReader(payload))
 
 	if s.pathStyle {
-		pathComponents := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
+		pathComponents := strings.SplitN(strings.TrimLeft(r.URL.Path, "/"), "/", 2)
 		var bucketName = strings.Trim(pathComponents[0], "/")
 
 		if bucketName == "" {
@@ -136,10 +137,16 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		ctx.Bucket = bucketName
-		r.URL.Path = pathComponents[1]
-		if r.URL.Path == "" {
-			r.URL.Path = "/"
+		r.URL.Path = "/" + strings.TrimLeft(pathComponents[1], "/")
+	} else {
+		// Best effort to get the bucket name from the URL host.
+		// The actual bucket name doesn't really matter, but we'll try to replicate S3 as good as we can.
+		host, _, _ := net.SplitHostPort(r.Host)
+		if host == "" {
+			host = r.Host
 		}
+
+		ctx.Bucket, _, _ = strings.Cut(host, ".")
 	}
 
 	switch r.Method {

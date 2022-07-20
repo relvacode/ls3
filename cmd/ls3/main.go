@@ -38,7 +38,7 @@ func RandStringRunes(n int, controlSet []rune) string {
 }
 
 type Command struct {
-	ListenAddr string `long:"listen-addr" default:"127.0.0.1:9000" description:"HTTP listen address"`
+	ListenAddr string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
 	PathStyle  bool   `long:"path-style" env:"PATH_STYLE" description:"Use path-style addressing"`
 
 	AccessKeyId     string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
