@@ -1,16 +1,29 @@
 package main
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"github.com/jessevdk/go-flags"
-	"ls3"
+	"github.com/relvacode/interrupt"
+	"github.com/relvacode/ls3"
+	"go.uber.org/zap"
 	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"text/template"
 	"time"
 )
+
+const ls3StartupTemplate = `
+[Lightweight Object Storage Server]
+Version           {{ .Version }}
+Directory         {{ .AbsPath }}
+Address           {{ .Address }}
+Access Key ID     {{ .AccessKeyID }}
+Secret Access Key {{ .SecretAccessKey }}
+`
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -37,7 +50,22 @@ type Command struct {
 	} `positional-args:"true"`
 }
 
-func Main() error {
+func getBuildVersion(info *debug.BuildInfo) (version string) {
+	version = "unknown"
+	if info == nil {
+		return
+	}
+
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			return setting.Value
+		}
+	}
+
+	return
+}
+
+func Main(log *zap.Logger) error {
 	var cmd Command
 	p := flags.NewParser(&cmd, flags.HelpFlag)
 
@@ -57,6 +85,7 @@ func Main() error {
 	}
 
 	if signer.AccessKeyID == "" {
+		log.Warn("ACCESS_KEY_ID not provided. Credentials will be generated automatically but will change next time the server starts!")
 		signer.AccessKeyID = RandStringRunes(20, []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
 		signer.SecretAccessKey = RandStringRunes(40, []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
 	}
@@ -66,21 +95,56 @@ func Main() error {
 		return err
 	}
 
-	fmt.Println("[ls3 Object Storage Server]")
-	fmt.Printf("Directory\t%s\n", absPath)
-	fmt.Printf("Address\thttp://%s pathStyle=%t\n", cmd.ListenAddr, cmd.PathStyle)
-	fmt.Printf("Access Key ID\t%s\n", signer.AccessKeyID)
-	fmt.Printf("Secret Access Key\t%s\n", signer.SecretAccessKey)
+	info, _ := debug.ReadBuildInfo()
 
-	s := ls3.NewServer(signer, os.DirFS(absPath), cmd.PathStyle)
+	t := template.Must(template.New("startup").Parse(ls3StartupTemplate))
+	_ = t.Execute(os.Stderr, map[string]interface{}{
+		"Version":         getBuildVersion(info),
+		"AbsPath":         absPath,
+		"Address":         cmd.ListenAddr,
+		"AccessKeyID":     signer.AccessKeyID,
+		"SecretAccessKey": signer.SecretAccessKey,
+	})
 
-	return http.ListenAndServe(cmd.ListenAddr, s)
+	var (
+		ctx     = interrupt.Context(context.Background())
+		exit    = make(chan error, 1)
+		handler = ls3.NewServer(log, signer, os.DirFS(absPath), cmd.PathStyle)
+		server  = &http.Server{
+			Addr:    cmd.ListenAddr,
+			Handler: handler,
+		}
+	)
+
+	go func() {
+		<-ctx.Done()
+
+		timeout, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+
+		_ = server.Shutdown(timeout)
+	}()
+
+	go func() {
+		log.Info("Start HTTP server")
+		exit <- server.ListenAndServe()
+	}()
+
+	err = <-exit
+	if err == http.ErrServerClosed {
+		err = nil
+	}
+
+	return err
 }
 
 func main() {
-	err := Main()
+	cfg := zap.NewDevelopmentConfig()
+	log, _ := cfg.Build()
+
+	err := Main(log)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err)
+		log.Error(err.Error())
 		os.Exit(1)
 	}
 }

@@ -5,12 +5,12 @@ import (
 	"strconv"
 )
 
-func (s *Server) HeadObject(rw http.ResponseWriter, r *http.Request) {
-	obj, err := s.openObject(r)
+func (s *Server) HeadObject(ctx *RequestContext) *Error {
+	obj, err := s.openObject(ctx.Request)
 	if err != nil {
 		// HEAD request contains no response body
-		rw.WriteHeader(errorFrom(err).StatusCode)
-		return
+		ctx.SendPlain(ErrorFrom(err).StatusCode)
+		return nil
 	}
 
 	_ = obj.Close()
@@ -19,15 +19,13 @@ func (s *Server) HeadObject(rw http.ResponseWriter, r *http.Request) {
 
 	if obj.Range != nil {
 		contentLength = obj.Range.Length
-		rw.Header().Set("Accept-Ranges", "bytes")
+		ctx.Header().Set("Accept-Ranges", "bytes")
 	}
 
-	var (
-		header = rw.Header()
-	)
-	header.Set("Last-Modified", obj.LastModified.Format(http.TimeFormat))
-	header.Set("Content-Length", strconv.Itoa(int(contentLength)))
-	header.Set("Content-Type", "binary/octet-stream")
+	ctx.Header().Set("Last-Modified", obj.LastModified.Format(http.TimeFormat))
+	ctx.Header().Set("Content-Length", strconv.Itoa(int(contentLength)))
+	ctx.Header().Set("Content-Type", "binary/octet-stream")
 
-	rw.WriteHeader(http.StatusOK)
+	ctx.SendPlain(http.StatusOK)
+	return nil
 }

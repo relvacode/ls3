@@ -17,11 +17,10 @@ func modQueryResponseHeader(q url.Values, hdr http.Header, queryKey, headerKey s
 	hdr.Set(headerKey, queryValue)
 }
 
-func (s *Server) GetObject(rw http.ResponseWriter, r *http.Request) {
-	obj, err := s.openObject(r)
+func (s *Server) GetObject(ctx *RequestContext) *Error {
+	obj, err := s.openObject(ctx.Request)
 	if err != nil {
-		s.SendError(rw, r, err)
-		return
+		return ErrorFrom(err)
 	}
 
 	defer obj.Close()
@@ -34,12 +33,12 @@ func (s *Server) GetObject(rw http.ResponseWriter, r *http.Request) {
 		responseCode = http.StatusPartialContent
 		contentLength = obj.Range.Length
 
-		rw.Header().Set("Content-Range", obj.Range.ContentRange(obj.Size))
+		ctx.Header().Set("Content-Range", obj.Range.ContentRange(obj.Size))
 	}
 
 	var (
-		query  = r.URL.Query()
-		header = rw.Header()
+		query  = ctx.URL.Query()
+		header = ctx.Header()
 	)
 
 	header.Set("Last-Modified", obj.LastModified.Format(http.TimeFormat))
@@ -56,6 +55,6 @@ func (s *Server) GetObject(rw http.ResponseWriter, r *http.Request) {
 	modQueryResponseHeader(query, header, "response-content-encoding", "Content-Encoding")
 
 	// Write the response
-	rw.WriteHeader(responseCode)
-	_, _ = io.Copy(rw, obj)
+	_, _ = io.Copy(ctx.SendPlain(responseCode), obj)
+	return nil
 }

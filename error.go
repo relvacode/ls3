@@ -34,7 +34,7 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("[%d] %s: %s", e.StatusCode, e.Code, e.Message)
 }
 
-func errorFrom(err error) *Error {
+func ErrorFrom(err error) *Error {
 	switch e := err.(type) {
 	case *Error:
 		return e

@@ -14,10 +14,10 @@ import (
 	"time"
 )
 
-//errEndOfIteration is a special sentinel error used for walking filesystem paths in ListObjectsV2.
+// errEndOfIteration is a special sentinel error used for walking filesystem paths in ListObjectsV2.
 var errEndOfIteration = errors.New("end iteration")
 
-func (s *Server) ListObjectsV2(rw http.ResponseWriter, r *http.Request) {
+func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
 	type Contents struct {
 		ChecksumAlgorithm string
 		ETag              string
@@ -46,7 +46,7 @@ func (s *Server) ListObjectsV2(rw http.ResponseWriter, r *http.Request) {
 		StartAfter            string
 	}
 
-	var query = r.URL.Query()
+	var query = ctx.URL.Query()
 
 	var maxKeys = 1000
 
@@ -55,27 +55,25 @@ func (s *Server) ListObjectsV2(rw http.ResponseWriter, r *http.Request) {
 		maxKeys, err = strconv.Atoi(maxKeysQuery)
 
 		if err != nil || maxKeys < 0 {
-			s.SendKnownError(rw, r, &Error{
+			return &Error{
 				ErrorCode: InvalidArgument,
 				Message:   "Invalid value for max-keys",
-			})
-			return
+			}
 		}
 	}
 
 	// encoding-type is always URL
 	if encodingTypeQuery := query.Get("encoding-type"); encodingTypeQuery != "" {
 		if encodingTypeQuery != "url" {
-			s.SendKnownError(rw, r, &Error{
+			return &Error{
 				ErrorCode: InvalidArgument,
 				Message:   "Only \"url\" is supported for encoding-type",
-			})
-			return
+			}
 		}
 	}
 
 	var result = ListBucketResult{
-		Name:              BucketFromContext(r.Context()),
+		Name:              ctx.Bucket,
 		Prefix:            query.Get("prefix"),
 		MaxKeys:           maxKeys,
 		Delimiter:         query.Get("delimiter"),
@@ -97,11 +95,10 @@ func (s *Server) ListObjectsV2(rw http.ResponseWriter, r *http.Request) {
 	if result.ContinuationToken != "" {
 		continuationPathBytes, err := base64.StdEncoding.DecodeString(result.ContinuationToken)
 		if err != nil {
-			s.SendKnownError(rw, r, &Error{
+			return &Error{
 				ErrorCode: InvalidArgument,
 				Message:   "You provided an invalid continuation-token.",
-			})
-			return
+			}
 		}
 
 		continuationPath = string(continuationPathBytes)
@@ -230,5 +227,6 @@ func (s *Server) ListObjectsV2(rw http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.SendXML(rw, http.StatusOK, &result)
+	ctx.SendXML(http.StatusOK, &result)
+	return nil
 }

@@ -2,37 +2,72 @@ package ls3
 
 import (
 	"bytes"
-	"context"
 	"encoding/xml"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
 	"os"
 	"strings"
 )
 
-type contextKeyType int
-
-const (
-	contextRequestIdKey contextKeyType = iota + 1
-	contextRequestBucketName
-)
-
 var xmlContentHeader = []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 
-func BucketFromContext(ctx context.Context) string {
-	v := ctx.Value(contextRequestBucketName)
-	if v == nil {
-		return ""
-	}
-
-	return v.(string)
+type RequestContext struct {
+	*zap.Logger
+	*http.Request
+	ID     uuid.UUID
+	Bucket string
+	rw     http.ResponseWriter
 }
 
-func NewServer(signer Signer, filesystem fs.FS, pathStyle bool) *Server {
+func (ctx *RequestContext) Header() http.Header {
+	return ctx.rw.Header()
+}
+
+func (ctx *RequestContext) SendPlain(statusCode int) io.Writer {
+	ctx.rw.WriteHeader(statusCode)
+	ctx.Info(http.StatusText(statusCode))
+	return ctx.rw
+}
+
+func (ctx *RequestContext) SendXML(statusCode int, payload any) {
+	ctx.rw.Header().Set("Content-Type", "application/xml")
+
+	w := ctx.SendPlain(statusCode)
+	w = io.MultiWriter(ctx.rw, os.Stderr)
+
+	_, _ = w.Write(xmlContentHeader)
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+
+	_ = enc.Encode(payload)
+}
+
+// SendKnownError replies to the caller with a concrete *Error type using the standard Amazon S3 XML error encoding.
+func (ctx *RequestContext) SendKnownError(err *Error) {
+	ctx.Error(err.Message, zap.String("err-code", err.Code), zap.Error(err))
+
+	type ErrorPayload struct {
+		XMLName xml.Name `xml:"Error"`
+		Error
+		Resource  string `xml:"Resource"`
+		RequestID string `xml:"RequestId"`
+	}
+
+	ctx.SendXML(err.StatusCode, &ErrorPayload{
+		Error:     *err,
+		Resource:  ctx.URL.Path,
+		RequestID: ctx.ID.String(),
+	})
+}
+
+type Method func(ctx *RequestContext) *Error
+
+func NewServer(log *zap.Logger, signer Signer, filesystem fs.FS, pathStyle bool) *Server {
 	return &Server{
+		log:       log,
 		signer:    signer,
 		fs:        filesystem,
 		pathStyle: pathStyle,
@@ -41,6 +76,7 @@ func NewServer(signer Signer, filesystem fs.FS, pathStyle bool) *Server {
 }
 
 type Server struct {
+	log       *zap.Logger
 	signer    Signer
 	fs        fs.FS
 	pathStyle bool
@@ -48,70 +84,40 @@ type Server struct {
 	uidGen func() uuid.UUID
 }
 
-func (s *Server) SendXML(rw http.ResponseWriter, statusCode int, payload any) {
-	rw.Header().Set("Content-Type", "application/xml")
-	rw.WriteHeader(statusCode)
+func (s *Server) method(name string, ctx *RequestContext, f Method) {
+	ctx.Logger = ctx.Logger.With(zap.String("method", name))
 
-	_, _ = rw.Write(xmlContentHeader)
-
-	w := io.MultiWriter(rw, os.Stderr)
-
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-
-	_ = enc.Encode(payload)
-}
-
-// SendKnownError replies to the caller with a concrete *Error type using the standard Amazon S3 XML error encoding.
-func (s *Server) SendKnownError(rw http.ResponseWriter, r *http.Request, err *Error) {
-	type ErrorPayload struct {
-		XMLName xml.Name `xml:"Error"`
-		Error
-		Resource  string `xml:"Resource"`
-		RequestID string `xml:"RequestId"`
+	err := f(ctx)
+	if err != nil {
+		ctx.SendKnownError(err)
 	}
-
-	var uid uuid.UUID
-
-	id := r.Context().Value(contextRequestIdKey)
-	if id != nil {
-		uid, _ = id.(uuid.UUID)
-	}
-
-	s.SendXML(rw, err.StatusCode, &ErrorPayload{
-		Error:     *err,
-		Resource:  r.URL.Path,
-		RequestID: uid.String(),
-	})
-}
-
-// SendError replies to the caller with an opaque error type using the standard Amazon S3 XML error encoding.
-// If err is not an *Error then a generic InvalidRequest is sent with the error message as the contents.
-func (s *Server) SendError(rw http.ResponseWriter, r *http.Request, err error) {
-	s.SendKnownError(rw, r, errorFrom(err))
-}
-
-// WithAuthorizedContext calls a http.HandlerFunc only after a request has been authorized and verified.
-func (s *Server) WithAuthorizedContext(rw http.ResponseWriter, r *http.Request, handler http.HandlerFunc) {
-
-	handler(rw, r)
 }
 
 func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Server", "ls3")
 
-	id := s.uidGen()
-	r = r.WithContext(context.WithValue(r.Context(), contextRequestIdKey, id))
+	requestId := s.uidGen()
 
-	rw.Header().Set("x-amz-request-id", id.String())
+	rw.Header().Set("x-amz-request-id", requestId.String())
 
-	log.Println(r.Method, r.Host, r.URL)
-	log.Println(r.Header)
+	log := s.log.With(
+		zap.String("request-id", requestId.String()),
+		zap.String("http-method", r.Method),
+		zap.String("http-uri", r.URL.RequestURI()),
+		zap.String("http-user-agent", r.Header.Get("User-Agent")),
+		zap.String("remote-addr", r.RemoteAddr),
+	)
+
+	ctx := &RequestContext{
+		Logger: log,
+		ID:     requestId,
+		rw:     rw,
+	}
 
 	// Verify the request
 	payload, err := s.signer.Verify(r)
 	if err != nil {
-		s.SendError(rw, r, err)
+		ctx.SendKnownError(ErrorFrom(err))
 		return
 	}
 
@@ -124,14 +130,14 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		var bucketName = strings.Trim(pathComponents[0], "/")
 
 		if bucketName == "" {
-			s.SendKnownError(rw, r, &Error{
+			ctx.SendKnownError(&Error{
 				ErrorCode: InvalidBucketName,
 				Message:   "This server uses path-style addressing for bucket names.",
 			})
 			return
 		}
 
-		r = r.WithContext(context.WithValue(r.Context(), contextRequestBucketName, bucketName))
+		ctx.Bucket = bucketName
 		r.URL.Path = pathComponents[1]
 		if r.URL.Path == "" {
 			r.URL.Path = "/"
@@ -141,26 +147,26 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodHead:
 		if r.URL.Path == "/" {
-			s.HeadBucket(rw, r)
+			s.method("HeadBucket", ctx, s.HeadBucket)
 			return
 		}
 
-		s.HeadObject(rw, r)
+		s.method("HeadObject", ctx, s.HeadObject)
 		return
 	case http.MethodGet:
 
 		if _, ok := r.URL.Query()["location"]; ok {
-			s.GetBucketLocation(rw, r)
+			s.method("GetBucketLocation", ctx, s.GetBucketLocation)
 			return
 		}
 
 		if r.URL.Path == "/" {
 			switch r.URL.Query().Get("list-type") {
 			case "2":
-				s.ListObjectsV2(rw, r)
+				s.method("ListObjectsV2", ctx, s.ListObjectsV2)
 				return
 			default:
-				s.SendKnownError(rw, r, &Error{
+				ctx.SendKnownError(&Error{
 					ErrorCode: NotImplemented,
 					Message:   "ListObjects is not implemented on this server.",
 				})
@@ -169,11 +175,11 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 		}
 
-		s.GetObject(rw, r)
+		s.method("GetObject", ctx, s.GetObject)
 		return
 	}
 
-	s.SendKnownError(rw, r, &Error{
+	ctx.SendKnownError(&Error{
 		ErrorCode: MethodNotAllowed,
 		Message:   "The specified method is not allowed against this resource.",
 	})
