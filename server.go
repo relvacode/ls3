@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"os"
 	"strings"
 )
 
@@ -36,8 +35,6 @@ func (ctx *RequestContext) SendXML(statusCode int, payload any) {
 	ctx.rw.Header().Set("Content-Type", "application/xml")
 
 	w := ctx.SendPlain(statusCode)
-	w = io.MultiWriter(ctx.rw, os.Stderr)
-
 	_, _ = w.Write(xmlContentHeader)
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
@@ -109,9 +106,10 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	)
 
 	ctx := &RequestContext{
-		Logger: log,
-		ID:     requestId,
-		rw:     rw,
+		Logger:  log,
+		Request: r,
+		ID:      requestId,
+		rw:      rw,
 	}
 
 	// Verify the request
