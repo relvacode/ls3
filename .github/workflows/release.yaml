@@ -6,7 +6,6 @@ jobs:
   go-binary-release:
     name: Release Go Binary
     runs-on: ubuntu-latest
-    needs: compile-frontend
     strategy:
       matrix:
         goos: [ linux, windows, darwin ]
