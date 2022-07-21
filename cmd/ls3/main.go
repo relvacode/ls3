@@ -8,6 +8,7 @@ import (
 	"github.com/relvacode/ls3"
 	"go.uber.org/zap"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ const ls3StartupTemplate = `
 [Lightweight Object Storage Server]
 Version           {{ .Version }}
 Directory         {{ .AbsPath }}{{ if .MultiBucket }}/[*]{{ end }}
-Address           {{ .Address }}
+Endpoint          http://{{if .Domain }}{{ .Domain }}{{ else }}{{ .Host }}{{ end }}:{{ .Port }}
 Access Key ID     {{ .AccessKeyID }}
 Secret Access Key {{ .SecretAccessKey }}
 `
@@ -98,11 +99,15 @@ func Main(log *zap.Logger) error {
 
 	info, _ := debug.ReadBuildInfo()
 
+	host, port, _ := net.SplitHostPort(cmd.ListenAddr)
+
 	t := template.Must(template.New("startup").Parse(ls3StartupTemplate))
 	_ = t.Execute(os.Stderr, map[string]interface{}{
 		"Version":         getBuildVersion(info),
 		"AbsPath":         absPath,
-		"Address":         cmd.ListenAddr,
+		"Host":            host,
+		"Port":            port,
+		"Domain":          cmd.Domain,
 		"MultiBucket":     cmd.MultiBucket,
 		"AccessKeyID":     signer.AccessKeyID,
 		"SecretAccessKey": signer.SecretAccessKey,
