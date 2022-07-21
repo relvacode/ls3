@@ -25,7 +25,7 @@ func (s *Server) ListObjects(ctx *RequestContext) *Error {
 		return ErrorFrom(err)
 	}
 
-	err = listObjectsUrlEncodingType(ctx.Request)
+	objectKeyEncoding, err := listObjectsUrlEncodingType(ctx.Request)
 	if err != nil {
 		return ErrorFrom(err)
 	}
@@ -37,7 +37,7 @@ func (s *Server) ListObjects(ctx *RequestContext) *Error {
 		MaxKeys:      maxKeys,
 		Delimiter:    query.Get("delimiter"),
 		Marker:       query.Get("marker"),
-		EncodingType: "url",
+		EncodingType: objectKeyEncoding,
 	}
 
 	var it = NewBucketIterator(ctx.Filesystem)
@@ -46,7 +46,7 @@ func (s *Server) ListObjects(ctx *RequestContext) *Error {
 		it.Seek(result.Marker)
 	}
 
-	result.Contents, err = it.PrefixScan(result.Prefix, result.Delimiter, result.MaxKeys)
+	result.Contents, err = it.PrefixScan(result.Prefix, result.Delimiter, objectKeyEncoding == "url", result.MaxKeys)
 	if err != nil {
 		return ErrorFrom(err)
 	}

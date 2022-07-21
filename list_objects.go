@@ -33,17 +33,18 @@ func listObjectsMaxKeys(r *http.Request) (int, error) {
 	return maxKeys, nil
 }
 
-func listObjectsUrlEncodingType(r *http.Request) error {
-	if encodingTypeQuery := r.URL.Query().Get("encoding-type"); encodingTypeQuery != "" {
-		if encodingTypeQuery != "url" {
-			return &Error{
-				ErrorCode: InvalidArgument,
-				Message:   "Only \"url\" is supported for encoding-type",
-			}
+func listObjectsUrlEncodingType(r *http.Request) (string, error) {
+	switch r.URL.Query().Get("encoding-type") {
+	case "url":
+		return "url", nil
+	case "":
+		return "", nil
+	default:
+		return "", &Error{
+			ErrorCode: InvalidArgument,
+			Message:   "Only \"url\" is supported for encoding-type",
 		}
 	}
-
-	return nil
 }
 
 type Contents struct {
@@ -101,7 +102,7 @@ func (it *BucketIterator) Seek(after string) {
 	it.seekObject = after
 }
 
-func (it *BucketIterator) PrefixScan(prefix string, delimiter string, maxKeys int) ([]Contents, error) {
+func (it *BucketIterator) PrefixScan(prefix string, delimiter string, objectKeyEncoding bool, maxKeys int) ([]Contents, error) {
 	var (
 		contents     []Contents
 		basePath     string
@@ -186,10 +187,15 @@ func (it *BucketIterator) PrefixScan(prefix string, delimiter string, maxKeys in
 			return err
 		}
 
+		var urlEncodedObjectPath = objectPath
+		if objectKeyEncoding {
+			urlEncodedObjectPath = encodePath(urlEncodedObjectPath)
+		}
+
 		contents = append(contents, Contents{
 			LastModified: fi.ModTime().UTC(),
 			Size:         int(fi.Size()),
-			Key:          encodePath(objectPath),
+			Key:          urlEncodedObjectPath,
 		})
 
 		canContinue := len(contents) < maxKeys
