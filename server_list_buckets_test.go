@@ -19,6 +19,7 @@ func TestServer_ListBuckets(t *testing.T) {
 <ListAllMyBucketsResult>
   <Buckets>
     <Bucket>
+      <CreationDate>2022-01-01T00:00:00Z</CreationDate>
       <Name>any</Name>
     </Bucket>
   </Buckets>

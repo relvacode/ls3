@@ -2,11 +2,17 @@ package ls3
 
 import (
 	"net/http"
+	"time"
 )
+
+// bucketCreationDate is a constant date where all buckets were "Created".
+// We don't actually know when the bucket was created, but some API consumers can't handle a missing date.
+var bucketCreationDate = time.Date(2022, 01, 01, 00, 00, 00, 0, time.UTC)
 
 func (s *Server) ListBuckets(ctx *RequestContext) *Error {
 	type Bucket struct {
-		Name string
+		CreationDate time.Time
+		Name         string
 	}
 	type ListAllMyBucketsResult struct {
 		Buckets struct {
@@ -24,7 +30,8 @@ func (s *Server) ListBuckets(ctx *RequestContext) *Error {
 
 	for _, name := range buckets {
 		result.Buckets.Bucket = append(result.Buckets.Bucket, Bucket{
-			Name: name,
+			CreationDate: bucketCreationDate,
+			Name:         name,
 		})
 	}
 
