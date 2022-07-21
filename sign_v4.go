@@ -37,7 +37,10 @@ func awsV4CanonicalRequest(r *http.Request, payloadShaHex []byte, signedHeaders 
 	b.WriteRune('\n')
 
 	// CanonicalQuerystring
-	b.WriteString(strings.ReplaceAll(r.URL.RawQuery, "+", "%20"))
+	var urlQuery = r.URL.Query()
+	var urlQuerySorted = urlQuery.Encode() // query string must be decoded, and then re-encoded to sort the query keys
+
+	b.WriteString(strings.ReplaceAll(urlQuerySorted, "+", "%20"))
 	b.WriteRune('\n')
 
 	// CanonicalHeaders

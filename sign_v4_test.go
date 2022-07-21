@@ -16,7 +16,7 @@ var testSigner = SignAWSV4{
 }
 
 func testSignerRequest() *http.Request {
-	req, _ := http.NewRequest(http.MethodGet, "https://examplebucket.s3.amazonaws.com/?max-keys=2&prefix=J", new(bytes.Buffer))
+	req, _ := http.NewRequest(http.MethodGet, "https://examplebucket.s3.amazonaws.com/?prefix=J&max-keys=2", new(bytes.Buffer))
 
 	req.Header.Set("Host", "examplebucket.s3.amazonaws.com")
 	req.Header.Set("x-amz-content-sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
