@@ -21,11 +21,10 @@ var (
 	InvalidToken          = ErrorCode{Code: "InvalidToken", StatusCode: 400}
 	InvalidObjectState    = ErrorCode{Code: "InvalidObjectState", StatusCode: 403}
 	InvalidRange          = ErrorCode{Code: "InvalidRange", StatusCode: 416}
-	InvalidBucketName     = ErrorCode{Code: "InvalidBucketName", StatusCode: 400}
-	NotImplemented        = ErrorCode{Code: "NotImplemented", StatusCode: 501}
 	NoSuchBucket          = ErrorCode{Code: "NoSuchBucket", StatusCode: 404}
 	InvalidBucketState    = ErrorCode{Code: "InvalidBucketState", StatusCode: 409}
 	InternalError         = ErrorCode{Code: "InternalError", StatusCode: 500}
+	MalformedXML          = ErrorCode{Code: "MalformedXML", StatusCode: 400}
 )
 
 type Error struct {

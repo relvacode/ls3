@@ -1,6 +1,7 @@
 package ls3
 
 import (
+	"bytes"
 	"encoding/xml"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -20,6 +21,9 @@ type RequestContext struct {
 	Filesystem fs.FS
 
 	rw http.ResponseWriter
+	// flag to indicate the context has already tried to encode the original payload.
+	// Stops an endless recursion when SendXML attempts to encode a poisoned error.
+	failedXmlEncode bool
 }
 
 func (ctx *RequestContext) Header() http.Header {
@@ -33,14 +37,35 @@ func (ctx *RequestContext) SendPlain(statusCode int) io.Writer {
 }
 
 func (ctx *RequestContext) SendXML(statusCode int, payload any) {
+	var b bytes.Buffer
+
+	enc := xml.NewEncoder(&b)
+	enc.Indent("", "  ")
+
+	// Try and encode the response as XML.
+	// If this fails then throw an error instead.
+	err := enc.Encode(payload)
+	if err != nil {
+		// Detect poisoned recursion in the very unlikely case the error cannot be encoded.
+		if ctx.failedXmlEncode {
+			ctx.Error("XML encoding failed twice for this request context. Refusing to try again and sending a plain HTTP status code instead.")
+			ctx.SendPlain(statusCode)
+			return
+		}
+
+		ctx.failedXmlEncode = true
+		ctx.SendKnownError(&Error{
+			ErrorCode: MalformedXML,
+			Message:   "The server was unable to XML encode the response.",
+		})
+		return
+	}
+
 	ctx.rw.Header().Set("Content-Type", "application/xml")
 
 	w := ctx.SendPlain(statusCode)
 	_, _ = w.Write(xmlContentHeader)
-	enc := xml.NewEncoder(w)
-	enc.Indent("", "  ")
-
-	_ = enc.Encode(payload)
+	_, _ = b.WriteTo(w)
 }
 
 // SendKnownError replies to the caller with a concrete *Error type using the standard Amazon S3 XML error encoding.
