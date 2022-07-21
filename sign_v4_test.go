@@ -45,3 +45,15 @@ func TestSignAWSV4_Verify(t *testing.T) {
 	err := testSigner.Verify(testSignerRequest())
 	assert.NoError(t, err)
 }
+
+func TestSignAWSV4_Verify_UnsignedPayload(t *testing.T) {
+	req, _ := http.NewRequest(http.MethodGet, "https://examplebucket.s3.amazonaws.com/?max-keys=2&prefix=J", new(bytes.Buffer))
+
+	req.Header.Set("Host", "examplebucket.s3.amazonaws.com")
+	req.Header.Set("x-amz-content-sha256", "UNSIGNED-PAYLOAD")
+	req.Header.Set("x-amz-date", "20130524T000000Z")
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=b1a076428fa68c2c42202ee5a5718b8207f725e451e2157d6b1c393e01fc2e68")
+
+	err := testSigner.Verify(req)
+	assert.NoError(t, err)
+}

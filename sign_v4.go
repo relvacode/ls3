@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+const (
+	amzUnsignedPayload = "UNSIGNED-PAYLOAD"
+)
+
 // Trim leading and trailing spaces and replace sequential spaces with one space, following Trimall()
 // in http://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
 func signV4TrimAll(input string) string {
@@ -21,7 +25,7 @@ func signV4TrimAll(input string) string {
 	return strings.Join(strings.Fields(input), " ")
 }
 
-func awsV4CanonicalRequest(r *http.Request, hashedPayload []byte, signedHeaders []string) []byte {
+func awsV4CanonicalRequest(r *http.Request, payloadShaHex []byte, signedHeaders []string) []byte {
 	var b bytes.Buffer
 
 	// HTTPMethod
@@ -74,7 +78,7 @@ func awsV4CanonicalRequest(r *http.Request, hashedPayload []byte, signedHeaders 
 	b.WriteRune('\n')
 
 	// HashedPayload
-	b.WriteString(hex.EncodeToString(hashedPayload))
+	b.Write(payloadShaHex)
 
 	return b.Bytes()
 }
@@ -198,45 +202,55 @@ func (s SignAWSV4) Verify(r *http.Request) error {
 		}
 	}
 
-	contentShaHeader := r.Header.Get(headerXAmzContextSha256)
-	if contentShaHeader == "" {
+	var (
+		contentShaHeader = r.Header.Get(headerXAmzContextSha256)
+		payloadShaHex    []byte
+	)
+
+	switch contentShaHeader {
+	case "":
 		return &Error{
 			ErrorCode: MissingSecurityHeader,
 			Message:   fmt.Sprintf("Your request is missing the required header %s.", headerXAmzContextSha256),
 		}
-	}
+	case amzUnsignedPayload:
+		payloadShaHex = []byte(amzUnsignedPayload)
+	default:
+		contentShaRaw, _ := hex.DecodeString(contentShaHeader)
 
-	contentShaRaw, _ := hex.DecodeString(contentShaHeader)
-
-	// Read request payload
-	var payload bytes.Buffer
-	_, err = io.Copy(&payload, r.Body)
-	closeErr := r.Body.Close()
-	if err != nil {
-		return err
-	}
-	if closeErr != nil {
-		return err
-	}
-
-	// After body has been read by signature verification,
-	// replace the original request body with the raw payload
-	r.Body = io.NopCloser(&payload)
-
-	// Compute payload SHA256
-	computedPayloadShaHasher := sha256.New()
-	computedPayloadShaHasher.Write(payload.Bytes())
-	computedPayloadSha := computedPayloadShaHasher.Sum(nil)
-
-	if payload.Len() > 0 && subtle.ConstantTimeCompare(computedPayloadSha, contentShaRaw) != 1 {
-		return &Error{
-			ErrorCode: BadDigest,
-			Message:   "The Content-MD5 or checksum value that you specified did not match what the server received.",
+		// Read request payload
+		var payload bytes.Buffer
+		_, err = io.Copy(&payload, r.Body)
+		closeErr := r.Body.Close()
+		if err != nil {
+			return err
 		}
+		if closeErr != nil {
+			return err
+		}
+
+		// After body has been read by signature verification,
+		// replace the original request body with the raw payload
+		r.Body = io.NopCloser(&payload)
+
+		// Compute payload SHA256
+		computedPayloadShaHasher := sha256.New()
+		computedPayloadShaHasher.Write(payload.Bytes())
+		computedPayloadSha := computedPayloadShaHasher.Sum(nil)
+
+		if payload.Len() > 0 && subtle.ConstantTimeCompare(computedPayloadSha, contentShaRaw) != 1 {
+			return &Error{
+				ErrorCode: BadDigest,
+				Message:   "The Content-MD5 or checksum value that you specified did not match what the server received.",
+			}
+		}
+
+		payloadShaHex = make([]byte, hex.EncodedLen(len(computedPayloadSha)))
+		hex.Encode(payloadShaHex, computedPayloadSha)
 	}
 
 	var (
-		req       = awsV4CanonicalRequest(r, computedPayloadSha, auth.SignedHeaders)
+		req       = awsV4CanonicalRequest(r, payloadShaHex, auth.SignedHeaders)
 		signature = sumHmacSha256(s.computeSigningKey(at), s.computeStringToSign(at, req))
 	)
 
