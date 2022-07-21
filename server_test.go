@@ -16,7 +16,7 @@ import (
 )
 
 func testServer() *Server {
-	srv := NewServer(zap.NewNop(), testSigner, SingleBucketFilesystem(memfs.New()), true)
+	srv := NewServer(zap.NewNop(), testSigner, SingleBucketFilesystem(memfs.New()), "")
 	uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
 	srv.uidGen = func() uuid.UUID {
 		return uid
@@ -28,10 +28,10 @@ func testServer() *Server {
 func testSignedRequest(signer Signer, method, path, query string, headers http.Header, payload []byte) *http.Request {
 	req := &http.Request{
 		Method: method,
+		Host:   "bucket.testing:80",
 		Body:   io.NopCloser(bytes.NewReader(payload)),
 		Header: make(http.Header),
 		URL: &url.URL{
-			Host:     "testing",
 			Path:     path,
 			RawQuery: query,
 		},
@@ -61,7 +61,7 @@ func TestServer(t *testing.T) {
 			req := testSignedRequest(testSigner, http.MethodTrace, "/Path/to/Resource", "", nil, nil)
 
 			srv := testServer()
-			srv.pathStyle = false
+			srv.domain = []string{"testing"}
 			srv.ServeHTTP(rw, req)
 
 			assert.Equal(t, http.StatusMethodNotAllowed, rw.Code)

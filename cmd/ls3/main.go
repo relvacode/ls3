@@ -39,7 +39,7 @@ func RandStringRunes(n int, controlSet []rune) string {
 
 type Command struct {
 	ListenAddr  string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
-	PathStyle   bool   `long:"path-style" env:"PATH_STYLE" description:"Use path-style addressing"`
+	Domain      string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
 	MultiBucket bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
 
 	AccessKeyId     string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
@@ -120,7 +120,7 @@ func Main(log *zap.Logger) error {
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, signer, bucketLookup, cmd.PathStyle)
+		handler = ls3.NewServer(log, signer, bucketLookup, cmd.Domain)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,

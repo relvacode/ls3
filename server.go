@@ -6,7 +6,6 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"strings"
 )
@@ -64,21 +63,25 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 type Method func(ctx *RequestContext) *Error
 
-func NewServer(log *zap.Logger, signer Signer, buckets BucketLookup, pathStyle bool) *Server {
+func NewServer(log *zap.Logger, signer Signer, buckets BucketLookup, domain string) *Server {
+	var domainComponents []string
+	if len(domain) > 0 {
+		domainComponents = strings.Split(domain, ".")
+	}
 	return &Server{
-		log:       log,
-		signer:    signer,
-		buckets:   buckets,
-		pathStyle: pathStyle,
-		uidGen:    uuid.New,
+		log:     log,
+		signer:  signer,
+		buckets: buckets,
+		domain:  domainComponents,
+		uidGen:  uuid.New,
 	}
 }
 
 type Server struct {
-	log       *zap.Logger
-	signer    Signer
-	buckets   BucketLookup
-	pathStyle bool
+	log     *zap.Logger
+	signer  Signer
+	buckets BucketLookup
+	domain  []string
 	// uidGen describes the function that generates request UUID
 	uidGen func() uuid.UUID
 }
@@ -121,35 +124,10 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.pathStyle {
-		pathComponents := strings.SplitN(strings.TrimLeft(r.URL.Path, "/"), "/", 2)
-		var bucketName = strings.Trim(pathComponents[0], "/")
-
-		if bucketName == "" {
-			ctx.SendKnownError(&Error{
-				ErrorCode: InvalidBucketName,
-				Message:   "This server uses path-style addressing for bucket names.",
-			})
-			return
-		}
-
-		ctx.Bucket = bucketName
-
-		var urlPath string
-		if len(pathComponents) > 1 {
-			urlPath = strings.TrimLeft(pathComponents[1], "/")
-		}
-
-		r.URL.Path = "/" + urlPath
-	} else {
-		// Best effort to get the bucket name from the URL host.
-		// Take the lowest domain components of the request host.
-		host, _, _ := net.SplitHostPort(r.Host)
-		if host == "" {
-			host = r.Host
-		}
-
-		ctx.Bucket, _, _ = strings.Cut(host, ".")
+	ctx.Bucket, err = bucketFromRequest(r, s.domain)
+	if err != nil {
+		ctx.SendKnownError(ErrorFrom(err))
+		return
 	}
 
 	ctx.Filesystem, err = s.buckets(ctx.Bucket)
