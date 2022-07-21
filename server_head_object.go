@@ -6,7 +6,7 @@ import (
 )
 
 func (s *Server) HeadObject(ctx *RequestContext) *Error {
-	obj, err := s.openObject(ctx.Request)
+	obj, err := stat(ctx)
 	if err != nil {
 		// HEAD request contains no response body
 		ctx.SendPlain(ErrorFrom(err).StatusCode)

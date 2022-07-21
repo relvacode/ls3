@@ -10,10 +10,10 @@ import (
 
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
 
-var testSigner = Signer{
+var testSigner = SignAWSV4{
+	Region:          "us-east-1",
 	AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
 	SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-	Region:          "us-east-1",
 }
 
 func testSignerRequest() *http.Request {
@@ -27,9 +27,9 @@ func testSignerRequest() *http.Request {
 	return req
 }
 
-func TestSigner_CanonicalRequest(t *testing.T) {
+func Test_awsV4CanonicalRequest(t *testing.T) {
 	d, _ := hex.DecodeString("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-	computed := testSigner.CanonicalRequest(testSignerRequest(), d, []string{"host", "x-amz-content-sha256", "x-amz-date"})
+	computed := awsV4CanonicalRequest(testSignerRequest(), d, []string{"host", "x-amz-content-sha256", "x-amz-date"})
 	assert.Equal(t, `GET
 /
 max-keys=2&prefix=J
@@ -41,7 +41,7 @@ host;x-amz-content-sha256;x-amz-date
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, string(computed))
 }
 
-func TestSigner_Verify(t *testing.T) {
-	_, err := testSigner.Verify(testSignerRequest())
+func TestSignAWSV4_Verify(t *testing.T) {
+	err := testSigner.Verify(testSignerRequest())
 	assert.NoError(t, err)
 }

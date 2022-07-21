@@ -19,7 +19,7 @@ import (
 const ls3StartupTemplate = `
 [Lightweight Object Storage Server]
 Version           {{ .Version }}
-Directory         {{ .AbsPath }}
+Directory         {{ .AbsPath }}{{ if .MultiBucket }}/[*]{{ end }}
 Address           {{ .Address }}
 Access Key ID     {{ .AccessKeyID }}
 Secret Access Key {{ .SecretAccessKey }}
@@ -38,8 +38,9 @@ func RandStringRunes(n int, controlSet []rune) string {
 }
 
 type Command struct {
-	ListenAddr string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
-	PathStyle  bool   `long:"path-style" env:"PATH_STYLE" description:"Use path-style addressing"`
+	ListenAddr  string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
+	PathStyle   bool   `long:"path-style" env:"PATH_STYLE" description:"Use path-style addressing"`
+	MultiBucket bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
 
 	AccessKeyId     string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
 	SecretAccessKey string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
@@ -74,7 +75,7 @@ func Main(log *zap.Logger) error {
 		return err
 	}
 
-	var signer = ls3.Signer{
+	var signer = ls3.SignAWSV4{
 		AccessKeyID:     cmd.AccessKeyId,
 		SecretAccessKey: cmd.SecretAccessKey,
 		Region:          cmd.Region,
@@ -102,14 +103,24 @@ func Main(log *zap.Logger) error {
 		"Version":         getBuildVersion(info),
 		"AbsPath":         absPath,
 		"Address":         cmd.ListenAddr,
+		"MultiBucket":     cmd.MultiBucket,
 		"AccessKeyID":     signer.AccessKeyID,
 		"SecretAccessKey": signer.SecretAccessKey,
 	})
 
+	fileSystem := os.DirFS(absPath)
+
+	var bucketLookup ls3.BucketLookup
+	if cmd.MultiBucket {
+		bucketLookup = ls3.SubdirBucketFilesystem(fileSystem)
+	} else {
+		bucketLookup = ls3.SingleBucketFilesystem(fileSystem)
+	}
+
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, signer, os.DirFS(absPath), cmd.PathStyle)
+		handler = ls3.NewServer(log, signer, bucketLookup, cmd.PathStyle)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,

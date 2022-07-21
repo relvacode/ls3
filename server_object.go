@@ -109,13 +109,13 @@ func limitRange(r *http.Request, obj *Object) error {
 	return nil
 }
 
-func (s *Server) openObject(r *http.Request) (*Object, error) {
-	key, err := urlPathObjectKey(r.URL.Path)
+func stat(ctx *RequestContext) (*Object, error) {
+	key, err := urlPathObjectKey(ctx.URL.Path)
 	if err != nil {
 		return nil, err
 	}
 
-	f, err := s.fs.Open(key)
+	f, err := ctx.Filesystem.Open(key)
 	if err != nil {
 		return nil, unwrapFsError(err)
 	}
@@ -132,7 +132,7 @@ func (s *Server) openObject(r *http.Request) (*Object, error) {
 		LastModified: fi.ModTime().UTC(),
 	}
 
-	err = limitRange(r, obj)
+	err = limitRange(ctx.Request, obj)
 	if err != nil {
 		return nil, err
 	}

@@ -125,7 +125,7 @@ func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
 	var shouldSkipContinuation = continuationPath != ""
 	var commonPrefix = make(map[string]struct{})
 
-	_ = fs.WalkDir(s.fs, scanPath, func(filePath string, d fs.DirEntry, err error) error {
+	_ = fs.WalkDir(ctx.Filesystem, scanPath, func(filePath string, d fs.DirEntry, err error) error {
 		if err != nil {
 
 			// Unwrap error looking for common filesystem errors

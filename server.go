@@ -1,7 +1,6 @@
 package ls3
 
 import (
-	"bytes"
 	"encoding/xml"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -17,9 +16,11 @@ var xmlContentHeader = []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 type RequestContext struct {
 	*zap.Logger
 	*http.Request
-	ID     uuid.UUID
-	Bucket string
-	rw     http.ResponseWriter
+	ID         uuid.UUID
+	Bucket     string
+	Filesystem fs.FS
+
+	rw http.ResponseWriter
 }
 
 func (ctx *RequestContext) Header() http.Header {
@@ -63,11 +64,11 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 type Method func(ctx *RequestContext) *Error
 
-func NewServer(log *zap.Logger, signer Signer, filesystem fs.FS, pathStyle bool) *Server {
+func NewServer(log *zap.Logger, signer Signer, buckets BucketLookup, pathStyle bool) *Server {
 	return &Server{
 		log:       log,
 		signer:    signer,
-		fs:        filesystem,
+		buckets:   buckets,
 		pathStyle: pathStyle,
 		uidGen:    uuid.New,
 	}
@@ -76,7 +77,7 @@ func NewServer(log *zap.Logger, signer Signer, filesystem fs.FS, pathStyle bool)
 type Server struct {
 	log       *zap.Logger
 	signer    Signer
-	fs        fs.FS
+	buckets   BucketLookup
 	pathStyle bool
 	// uidGen describes the function that generates request UUID
 	uidGen func() uuid.UUID
@@ -114,15 +115,11 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify the request
-	payload, err := s.signer.Verify(r)
+	err := s.signer.Verify(r)
 	if err != nil {
 		ctx.SendKnownError(ErrorFrom(err))
 		return
 	}
-
-	// After body has been read by signature verification,
-	// replace the original request body with the raw payload
-	r.Body = io.NopCloser(bytes.NewReader(payload))
 
 	if s.pathStyle {
 		pathComponents := strings.SplitN(strings.TrimLeft(r.URL.Path, "/"), "/", 2)
@@ -137,16 +134,28 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		}
 
 		ctx.Bucket = bucketName
-		r.URL.Path = "/" + strings.TrimLeft(pathComponents[1], "/")
+
+		var urlPath string
+		if len(pathComponents) > 1 {
+			urlPath = strings.TrimLeft(pathComponents[1], "/")
+		}
+
+		r.URL.Path = "/" + urlPath
 	} else {
 		// Best effort to get the bucket name from the URL host.
-		// The actual bucket name doesn't really matter, but we'll try to replicate S3 as good as we can.
+		// Take the lowest domain components of the request host.
 		host, _, _ := net.SplitHostPort(r.Host)
 		if host == "" {
 			host = r.Host
 		}
 
 		ctx.Bucket, _, _ = strings.Cut(host, ".")
+	}
+
+	ctx.Filesystem, err = s.buckets(ctx.Bucket)
+	if err != nil {
+		ctx.SendKnownError(ErrorFrom(err))
+		return
 	}
 
 	switch r.Method {

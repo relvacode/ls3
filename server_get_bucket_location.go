@@ -1,10 +1,14 @@
 package ls3
 
-import "net/http"
+import (
+	"encoding/xml"
+	"net/http"
+)
 
 func (s *Server) GetBucketLocation(ctx *RequestContext) *Error {
 	type LocationConstraint struct {
-		LocationConstraint string
+		XMLName            xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ LocationConstraint"`
+		LocationConstraint string   `xml:",chardata"`
 	}
 
 	ctx.SendXML(http.StatusOK, &LocationConstraint{})

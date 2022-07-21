@@ -23,6 +23,8 @@ var (
 	InvalidRange          = ErrorCode{Code: "InvalidRange", StatusCode: 416}
 	InvalidBucketName     = ErrorCode{Code: "InvalidBucketName", StatusCode: 400}
 	NotImplemented        = ErrorCode{Code: "NotImplemented", StatusCode: 501}
+	NoSuchBucket          = ErrorCode{Code: "NoSuchBucket", StatusCode: 404}
+	InvalidBucketState    = ErrorCode{Code: "InvalidBucketState", StatusCode: 409}
 )
 
 type Error struct {

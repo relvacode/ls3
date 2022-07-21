@@ -18,7 +18,7 @@ func modQueryResponseHeader(q url.Values, hdr http.Header, queryKey, headerKey s
 }
 
 func (s *Server) GetObject(ctx *RequestContext) *Error {
-	obj, err := s.openObject(ctx.Request)
+	obj, err := stat(ctx)
 	if err != nil {
 		return ErrorFrom(err)
 	}
