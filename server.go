@@ -173,10 +173,7 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 				s.method("ListObjectsV2", ctx, s.ListObjectsV2)
 				return
 			default:
-				ctx.SendKnownError(&Error{
-					ErrorCode: NotImplemented,
-					Message:   "ListObjects is not implemented on this server.",
-				})
+				s.method("ListObjects", ctx, s.ListObjects)
 				return
 			}
 
