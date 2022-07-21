@@ -63,7 +63,7 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 type Method func(ctx *RequestContext) *Error
 
-func NewServer(log *zap.Logger, signer Signer, buckets BucketLookup, domain string) *Server {
+func NewServer(log *zap.Logger, signer Signer, buckets BucketFilesystemProvider, domain string) *Server {
 	var domainComponents []string
 	if len(domain) > 0 {
 		domainComponents = strings.Split(domain, ".")
@@ -80,7 +80,7 @@ func NewServer(log *zap.Logger, signer Signer, buckets BucketLookup, domain stri
 type Server struct {
 	log     *zap.Logger
 	signer  Signer
-	buckets BucketLookup
+	buckets BucketFilesystemProvider
 	domain  []string
 	// uidGen describes the function that generates request UUID
 	uidGen func() uuid.UUID
@@ -124,13 +124,28 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx.Bucket, err = bucketFromRequest(r, s.domain)
+	var ok bool
+	ctx.Bucket, ok, err = bucketFromRequest(r, s.domain)
 	if err != nil {
 		ctx.SendKnownError(ErrorFrom(err))
 		return
 	}
 
-	ctx.Filesystem, err = s.buckets(ctx.Bucket)
+	// Non-bucket methods
+	if !ok {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/":
+			s.method("ListBuckets", ctx, s.ListBuckets)
+			return
+		}
+
+		ctx.SendKnownError(&Error{
+			ErrorCode: MethodNotAllowed,
+			Message:   "The specified method is not allowed against this resource.",
+		})
+	}
+
+	ctx.Filesystem, err = s.buckets.Open(ctx.Bucket)
 	if err != nil {
 		ctx.SendKnownError(ErrorFrom(err))
 		return

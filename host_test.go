@@ -15,8 +15,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		bucket, err := bucketFromRequest(req, nil)
+		bucket, ok, err := bucketFromRequest(req, nil)
 		assert.NoError(t, err)
+		assert.True(t, ok)
 		assert.Equal(t, "bucket", bucket)
 	})
 
@@ -27,8 +28,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		bucket, err := bucketFromRequest(req, nil)
+		bucket, ok, err := bucketFromRequest(req, nil)
 		assert.NoError(t, err)
+		assert.True(t, ok)
 		assert.Equal(t, "bucket", bucket)
 	})
 
@@ -39,9 +41,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		_, err := bucketFromRequest(req, nil)
-		assert.Error(t, err)
-		assertIsError(t, err, InvalidBucketName)
+		_, ok, err := bucketFromRequest(req, nil)
+		assert.NoError(t, err)
+		assert.False(t, ok)
 	})
 
 	t.Run("host", func(t *testing.T) {
@@ -52,8 +54,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		bucket, err := bucketFromRequest(req, []string{"domain"})
+		bucket, ok, err := bucketFromRequest(req, []string{"domain"})
 		assert.NoError(t, err)
+		assert.True(t, ok)
 		assert.Equal(t, "bucket", bucket)
 	})
 
@@ -65,8 +68,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		bucket, err := bucketFromRequest(req, []string{"domain", "net"})
+		bucket, ok, err := bucketFromRequest(req, []string{"domain", "net"})
 		assert.NoError(t, err)
+		assert.True(t, ok)
 		assert.Equal(t, "bucket", bucket)
 	})
 
@@ -78,9 +82,23 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		bucket, err := bucketFromRequest(req, []string{"domain"})
+		bucket, ok, err := bucketFromRequest(req, []string{"domain"})
 		assert.NoError(t, err)
+		assert.True(t, ok)
 		assert.Equal(t, "bucket", bucket)
+	})
+
+	t.Run("host_no_bucket_no_path", func(t *testing.T) {
+		req := &http.Request{
+			Host: "domain:80",
+			URL: &url.URL{
+				Path: "/",
+			},
+		}
+
+		_, ok, err := bucketFromRequest(req, []string{"domain"})
+		assert.NoError(t, err)
+		assert.False(t, ok)
 	})
 
 	t.Run("host_wrong_base_domain", func(t *testing.T) {
@@ -91,8 +109,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		_, err := bucketFromRequest(req, []string{"domain"})
+		_, ok, err := bucketFromRequest(req, []string{"domain"})
 		assert.Error(t, err)
+		assert.False(t, ok)
 		assertIsError(t, err, InvalidRequest)
 	})
 
@@ -104,8 +123,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		_, err := bucketFromRequest(req, []string{"domain", "net"})
+		_, ok, err := bucketFromRequest(req, []string{"domain", "net"})
 		assert.Error(t, err)
+		assert.False(t, ok)
 		assertIsError(t, err, InvalidRequest)
 	})
 
@@ -117,8 +137,9 @@ func Test_bucketFromRequest(t *testing.T) {
 			},
 		}
 
-		_, err := bucketFromRequest(req, []string{"domain", "net"})
+		_, ok, err := bucketFromRequest(req, []string{"domain", "net"})
 		assert.Error(t, err)
+		assert.False(t, ok)
 		assertIsError(t, err, InvalidRequest)
 	})
 }

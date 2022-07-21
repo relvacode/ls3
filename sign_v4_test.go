@@ -2,7 +2,6 @@ package ls3
 
 import (
 	"bytes"
-	"encoding/hex"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"testing"
@@ -28,8 +27,7 @@ func testSignerRequest() *http.Request {
 }
 
 func Test_awsV4CanonicalRequest(t *testing.T) {
-	d, _ := hex.DecodeString("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-	computed := awsV4CanonicalRequest(testSignerRequest(), d, []string{"host", "x-amz-content-sha256", "x-amz-date"})
+	computed := awsV4CanonicalRequest(testSignerRequest(), []byte("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"), []string{"host", "x-amz-content-sha256", "x-amz-date"})
 	assert.Equal(t, `GET
 /
 max-keys=2&prefix=J

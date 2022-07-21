@@ -163,8 +163,12 @@ func (s SignAWSV4) Sign(r *http.Request, payload []byte) error {
 
 	r.Header.Set("Host", r.Host)
 
+	var computedPayloadSha = h.Sum(nil)
+	var payloadShaHex = make([]byte, hex.EncodedLen(len(computedPayloadSha)))
+	hex.Encode(payloadShaHex, computedPayloadSha)
+
 	var (
-		canonicalRequest = awsV4CanonicalRequest(r, h.Sum(nil), []string{"host", "x-amz-content-sha256", "x-amz-date"})
+		canonicalRequest = awsV4CanonicalRequest(r, payloadShaHex, []string{"host", "x-amz-content-sha256", "x-amz-date"})
 		signature        = sumHmacSha256(s.computeSigningKey(t), s.computeStringToSign(t, canonicalRequest))
 	)
 

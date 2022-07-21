@@ -25,6 +25,7 @@ var (
 	NotImplemented        = ErrorCode{Code: "NotImplemented", StatusCode: 501}
 	NoSuchBucket          = ErrorCode{Code: "NoSuchBucket", StatusCode: 404}
 	InvalidBucketState    = ErrorCode{Code: "InvalidBucketState", StatusCode: 409}
+	InternalError         = ErrorCode{Code: "InternalError", StatusCode: 500}
 )
 
 type Error struct {

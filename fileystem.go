@@ -2,37 +2,76 @@ package ls3
 
 import "io/fs"
 
-// BucketLookup is a function that when given a bucket name, it returns a filesystem for that bucket.
-type BucketLookup func(bucket string) (fs.FS, error)
+type BucketFilesystemProvider interface {
+	// ListBuckets lists all available buckets in the provider.
+	ListBuckets() ([]string, error)
 
-// SingleBucketFilesystem returns a BucketLookup that always returns the same filesystem for all buckets
-func SingleBucketFilesystem(fileSystem fs.FS) BucketLookup {
-	return func(_ string) (fs.FS, error) {
-		return fileSystem, nil
-	}
+	// Open returns a filesystem for a given bucket name.
+	Open(bucket string) (fs.FS, error)
 }
 
-// SubdirBucketFilesystem returns a BucketLookup that returns a subdirectory of the base filesystem for each bucket.
+// SingleBucketFilesystem implements BucketFilesystemProvider that
+// always returns the same filesystem for any bucket name provided.
+type SingleBucketFilesystem struct {
+	fs.FS
+}
+
+// ListBuckets always returns the same bucket name.
+// The actual name doesn't matter, as the provider will always return the same filesystem.
+func (p *SingleBucketFilesystem) ListBuckets() ([]string, error) {
+	return []string{"any"}, nil
+}
+
+func (p *SingleBucketFilesystem) Open(_ string) (fs.FS, error) {
+	return p.FS, nil
+}
+
+type SubdirBucketFilesystem struct {
+	fs.FS
+}
+
+// ListBuckets returns all subdirectories of the base filesystem.
+func (p *SubdirBucketFilesystem) ListBuckets() ([]string, error) {
+	entries, err := fs.ReadDir(p.FS, ".")
+	if err != nil {
+		return nil, &Error{
+			ErrorCode: InternalError,
+			Message:   "Unable to list buckets at this time.",
+		}
+	}
+
+	var buckets []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			// Ignore non-directories
+			continue
+		}
+
+		buckets = append(buckets, entry.Name())
+	}
+
+	return buckets, nil
+}
+
+// Open returns a subdirectory of the base filesystem for each bucket.
 // The error NoSuchBucket is returned if fs.Stat of the bucket path returns an error.
 // The error InvalidBucketState is returned if fs.Sub returns an error.
-func SubdirBucketFilesystem(base fs.FS) BucketLookup {
-	return func(bucket string) (fs.FS, error) {
-		_, err := fs.Stat(base, bucket)
-		if err != nil {
-			return nil, &Error{
-				ErrorCode: NoSuchBucket,
-				Message:   "The specified bucket does not exist.",
-			}
+func (p *SubdirBucketFilesystem) Open(bucket string) (fs.FS, error) {
+	fi, err := fs.Stat(p.FS, bucket)
+	if err != nil || !fi.IsDir() {
+		return nil, &Error{
+			ErrorCode: NoSuchBucket,
+			Message:   "The specified bucket does not exist.",
 		}
-
-		sub, err := fs.Sub(base, bucket)
-		if err != nil {
-			return nil, &Error{
-				ErrorCode: InvalidBucketState,
-				Message:   "The request is not valid for the current state of the bucket.",
-			}
-		}
-
-		return sub, nil
 	}
+
+	sub, err := fs.Sub(p.FS, bucket)
+	if err != nil {
+		return nil, &Error{
+			ErrorCode: InvalidBucketState,
+			Message:   "The request is not valid for the current state of the bucket.",
+		}
+	}
+
+	return sub, nil
 }

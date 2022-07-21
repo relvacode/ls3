@@ -16,7 +16,7 @@ import (
 )
 
 func testServer() *Server {
-	srv := NewServer(zap.NewNop(), testSigner, SingleBucketFilesystem(memfs.New()), "")
+	srv := NewServer(zap.NewNop(), testSigner, &SingleBucketFilesystem{FS: memfs.New()}, "")
 	uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
 	srv.uidGen = func() uuid.UUID {
 		return uid

@@ -110,17 +110,17 @@ func Main(log *zap.Logger) error {
 
 	fileSystem := os.DirFS(absPath)
 
-	var bucketLookup ls3.BucketLookup
+	var buckets ls3.BucketFilesystemProvider
 	if cmd.MultiBucket {
-		bucketLookup = ls3.SubdirBucketFilesystem(fileSystem)
+		buckets = &ls3.SubdirBucketFilesystem{FS: fileSystem}
 	} else {
-		bucketLookup = ls3.SingleBucketFilesystem(fileSystem)
+		buckets = &ls3.SingleBucketFilesystem{FS: fileSystem}
 	}
 
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, signer, bucketLookup, cmd.Domain)
+		handler = ls3.NewServer(log, signer, buckets, cmd.Domain)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,
