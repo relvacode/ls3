@@ -12,7 +12,6 @@ import (
 
 func testSigner() SignAWSV4 {
 	return SignAWSV4{
-		Region:          "us-east-1",
 		AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
 		SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 	}

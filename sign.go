@@ -16,9 +16,6 @@ const (
 
 // A Signer is a type capable of signing and verifying the authorization and request signature present in an HTTP request.
 type Signer interface {
-	// SigningRegion returns the region string that is used to verify requests.
-	SigningRegion() string
-
 	// Sign computes and signs the given HTTP request using the given request payload.
 	// payload should be the contents of r.Body.
 	Sign(r *http.Request, payload []byte) error

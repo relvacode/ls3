@@ -45,7 +45,6 @@ type Command struct {
 
 	AccessKeyId     string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
 	SecretAccessKey string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
-	Region          string `long:"region" env:"REGION" default:"us-east-1" description:"The signing region"`
 
 	Positional struct {
 		Path string `required:"true" description:"The root directory to serve"`
@@ -79,7 +78,6 @@ func Main(log *zap.Logger) error {
 	var signer = ls3.SignAWSV4{
 		AccessKeyID:     cmd.AccessKeyId,
 		SecretAccessKey: cmd.SecretAccessKey,
-		Region:          cmd.Region,
 	}
 
 	if (signer.AccessKeyID == "") != (signer.SecretAccessKey == "") {

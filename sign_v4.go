@@ -143,17 +143,12 @@ func awsV4CanonicalRequest(r *http.Request, payloadShaHex []byte, signedHeaders 
 }
 
 type SignAWSV4 struct {
-	Region          string
 	AccessKeyID     string
 	SecretAccessKey string
 
 	// timeNow is a function that returns the current time.
 	// Used for testing, if nil then time.Now is used.
 	timeNow func() time.Time
-}
-
-func (s SignAWSV4) SigningRegion() string {
-	return s.Region
 }
 
 func (s SignAWSV4) now() time.Time {
@@ -163,7 +158,7 @@ func (s SignAWSV4) now() time.Time {
 	return s.timeNow()
 }
 
-func (s SignAWSV4) computeStringToSign(at time.Time, canonicalRequest []byte) []byte {
+func (s SignAWSV4) computeStringToSign(at time.Time, region string, canonicalRequest []byte) []byte {
 	var b bytes.Buffer
 
 	b.WriteString(awsSignatureVersionV4)
@@ -176,7 +171,7 @@ func (s SignAWSV4) computeStringToSign(at time.Time, canonicalRequest []byte) []
 	// Scope
 	b.WriteString(at.Format(amzDateFormat))
 	b.WriteRune('/')
-	b.WriteString(s.Region)
+	b.WriteString(region)
 	b.WriteString("/s3/aws4_request\n")
 
 	// Hex(SHA256Hash(<CanonicalRequest>))
@@ -187,9 +182,9 @@ func (s SignAWSV4) computeStringToSign(at time.Time, canonicalRequest []byte) []
 	return b.Bytes()
 }
 
-func (s SignAWSV4) computeSigningKey(at time.Time) []byte {
+func (s SignAWSV4) computeSigningKey(at time.Time, region string) []byte {
 	var signed = sumHmacSha256([]byte("AWS4"+s.SecretAccessKey), at.AppendFormat(nil, amzDateFormat))
-	signed = sumHmacSha256(signed, []byte(s.Region))
+	signed = sumHmacSha256(signed, []byte(region))
 	signed = sumHmacSha256(signed, []byte("s3"))
 	signed = sumHmacSha256(signed, []byte("aws4_request"))
 
@@ -213,15 +208,14 @@ func (s SignAWSV4) Sign(r *http.Request, payload []byte) error {
 
 	var (
 		canonicalRequest = awsV4CanonicalRequest(r, payloadShaHex, []string{"host", "x-amz-content-sha256", "x-amz-date"})
-		signature        = sumHmacSha256(s.computeSigningKey(t), s.computeStringToSign(t, canonicalRequest))
+		signature        = sumHmacSha256(s.computeSigningKey(t, "us-east-1"), s.computeStringToSign(t, "us-east-1", canonicalRequest))
 	)
 
 	r.Header.Set("Authorization", fmt.Sprintf(
-		"%s Credential=%s/%s/%s/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=%x",
+		"%s Credential=%s/%s/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=%x",
 		awsSignatureVersionV4,
 		s.AccessKeyID,
 		t.Format(amzDateFormat),
-		s.Region,
 		signature,
 	))
 
@@ -269,7 +263,7 @@ func (s SignAWSV4) VerifyHeaders(r *http.Request) error {
 
 	var (
 		req       = awsV4CanonicalRequest(r, payloadShaHex, auth.SignedHeaders)
-		signature = sumHmacSha256(s.computeSigningKey(at), s.computeStringToSign(at, req))
+		signature = sumHmacSha256(s.computeSigningKey(at, auth.Credentials.Region), s.computeStringToSign(at, auth.Credentials.Region, req))
 	)
 
 	// Check request signature is equal to the computed signature
@@ -354,7 +348,7 @@ func (s SignAWSV4) VerifyQuery(r *http.Request) error {
 
 	var (
 		req       = awsV4CanonicalRequest(r, payloadShaHex, q[xAmzSignedHeaders])
-		signature = sumHmacSha256(s.computeSigningKey(at), s.computeStringToSign(at, req))
+		signature = sumHmacSha256(s.computeSigningKey(at, credential.Region), s.computeStringToSign(at, credential.Region, req))
 	)
 
 	// Check request signature is equal to the computed signature

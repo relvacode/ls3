@@ -14,5 +14,5 @@ func TestServer_HeadBucket(t *testing.T) {
 	testServer().ServeHTTP(rw, req)
 
 	assert.Equal(t, http.StatusOK, rw.Code)
-	assert.Equal(t, testSigner().Region, rw.Header().Get("x-amz-bucket-region"))
+	assert.Equal(t, amzRegion, rw.Header().Get("x-amz-bucket-region"))
 }
