@@ -25,6 +25,24 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 
 	defer obj.Close()
 
+	var (
+		query  = ctx.Request.URL.Query()
+		header = ctx.Header()
+	)
+
+	header.Set("Last-Modified", obj.LastModified.Format(http.TimeFormat))
+	header.Set("ETag", strconv.Quote(obj.ETag))
+
+	// Conditional Response
+	conditional, err := checkConditionalRequest(ctx.Request.Header, obj)
+	if err != nil {
+		return ErrorFrom(err)
+	}
+	if conditional > 0 {
+		ctx.SendPlain(conditional)
+		return nil
+	}
+
 	var responseCode = http.StatusOK
 	var contentLength = obj.Size
 
@@ -32,16 +50,9 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 		// Set accepted range
 		responseCode = http.StatusPartialContent
 		contentLength = obj.Range.Length
-
-		ctx.Header().Set("Content-Range", obj.Range.ContentRange(obj.Size))
+		header.Set("Content-Range", obj.Range.ContentRange(obj.Size))
 	}
 
-	var (
-		query  = ctx.URL.Query()
-		header = ctx.Header()
-	)
-
-	header.Set("Last-Modified", obj.LastModified.Format(http.TimeFormat))
 	header.Set("Content-Length", strconv.Itoa(int(contentLength)))
 	header.Set("Content-Type", "binary/octet-stream")
 	header.Set("Accept-Ranges", "bytes")

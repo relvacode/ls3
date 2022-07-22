@@ -15,10 +15,10 @@ var xmlContentHeader = []byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 
 type RequestContext struct {
 	*zap.Logger
-	*http.Request
 	ID         uuid.UUID
 	Bucket     string
 	Filesystem fs.FS
+	Request    *http.Request
 
 	rw http.ResponseWriter
 	// flag to indicate the context has already tried to encode the original payload.
@@ -81,7 +81,7 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 	ctx.SendXML(err.StatusCode, &ErrorPayload{
 		Error:     *err,
-		Resource:  ctx.URL.Path,
+		Resource:  ctx.Request.URL.Path,
 		RequestID: ctx.ID.String(),
 	})
 }

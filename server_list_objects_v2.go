@@ -32,7 +32,7 @@ func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
 		return ErrorFrom(err)
 	}
 
-	var query = ctx.URL.Query()
+	var query = ctx.Request.URL.Query()
 	var result = ListBucketResult{
 		Name:              ctx.Bucket,
 		Prefix:            query.Get("prefix"),

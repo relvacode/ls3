@@ -5,6 +5,7 @@ import (
 	"github.com/gotd/contrib/http_range"
 	"io"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path"
 	"strings"
@@ -17,6 +18,9 @@ type Object struct {
 	Size         int64
 	Range        *http_range.Range
 	LastModified time.Time
+	// ETag represents the ETag field of the Object.
+	// It is always empty.
+	ETag string
 }
 
 func urlPathObjectKey(urlPath string) (string, error) {
@@ -54,6 +58,82 @@ func unwrapFsError(err error) *Error {
 		ErrorCode: InvalidObjectState,
 		Message:   "An undefined permanent error occurred accessing this object.",
 	}
+}
+
+// checkConditionalRequest checks conditional parameters present in HTTP headers
+// And returns a status code for that condition.
+// Returns [0, nil] if there are no limiting conditions.
+func checkConditionalRequest(header http.Header, obj *Object) (int, error) {
+	var (
+		ifMatch     *bool
+		ifNoneMatch *bool
+	)
+
+	if _, reqIfMatch := header[textproto.CanonicalMIMEHeaderKey("If-Match")]; reqIfMatch {
+		var eval = header.Get("If-Match") == obj.ETag
+		ifMatch = &eval
+	}
+
+	if _, reqIfNoneMatch := header[textproto.CanonicalMIMEHeaderKey("If-None-Match")]; reqIfNoneMatch {
+		var eval = header.Get("If-None-Match") != obj.ETag
+		ifNoneMatch = &eval
+	}
+
+	// Check if the object has not been modified since the requested date.
+	if reqModifiedSince := header.Get("If-Modified-Since"); reqModifiedSince != "" {
+		ifModifiedSinceTime, err := time.Parse(http.TimeFormat, reqModifiedSince)
+		if err != nil {
+			return 0, &Error{
+				ErrorCode: InvalidArgument,
+				Message:   "Invalid value for If-Modified-Since.",
+			}
+		}
+
+		ifModifiedSince := ifModifiedSinceTime.After(obj.LastModified)
+
+		if ifMatch != nil {
+			if *ifMatch && !ifModifiedSince {
+				return 0, nil
+			}
+		}
+
+		if !ifModifiedSince {
+			return http.StatusNotModified, nil
+		}
+	}
+
+	// Check if the object has not been modified since the requested date.
+	if reqUnmodifiedSince := header.Get("If-Unmodified-Since"); reqUnmodifiedSince != "" {
+		ifUnmodifiedSinceTime, err := time.Parse(http.TimeFormat, reqUnmodifiedSince)
+		if err != nil {
+			return 0, &Error{
+				ErrorCode: InvalidArgument,
+				Message:   "Invalid value for If-Unmodified-Since.",
+			}
+		}
+
+		ifUnmodifiedSince := obj.LastModified.Before(ifUnmodifiedSinceTime)
+
+		if ifNoneMatch != nil {
+			if !*ifNoneMatch && ifUnmodifiedSince {
+				return http.StatusNotModified, nil
+			}
+		}
+
+		if !ifUnmodifiedSince {
+			return http.StatusPreconditionFailed, nil
+		}
+	}
+
+	if ifMatch != nil && !*ifMatch {
+		return http.StatusPreconditionFailed, nil
+	}
+
+	if ifNoneMatch != nil && !*ifNoneMatch {
+		return http.StatusNotModified, nil
+	}
+
+	return 0, nil
 }
 
 type closeProxy struct {
@@ -110,7 +190,7 @@ func limitRange(r *http.Request, obj *Object) error {
 }
 
 func stat(ctx *RequestContext) (*Object, error) {
-	key, err := urlPathObjectKey(ctx.URL.Path)
+	key, err := urlPathObjectKey(ctx.Request.URL.Path)
 	if err != nil {
 		return nil, err
 	}
