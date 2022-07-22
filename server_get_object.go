@@ -54,7 +54,7 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 	}
 
 	header.Set("Content-Length", strconv.Itoa(int(contentLength)))
-	header.Set("Content-Type", "binary/octet-stream")
+	header.Set("Content-Type", obj.ContentType)
 	header.Set("Accept-Ranges", "bytes")
 
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html -> Overriding Response Header Values

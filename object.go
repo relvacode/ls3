@@ -3,7 +3,9 @@ package ls3
 import (
 	"errors"
 	"github.com/gotd/contrib/http_range"
+	"github.com/h2non/filetype"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/textproto"
 	"os"
@@ -18,6 +20,10 @@ type Object struct {
 	Size         int64
 	Range        *http_range.Range
 	LastModified time.Time
+	// ContentType contains the MIME type of the object data.
+	// It is the best guess based on the filetype library.
+	// This is always set, if unknown the MIME type becomes application/octet-stream
+	ContentType string
 	// ETag represents the ETag field of the Object.
 	// It is always empty.
 	ETag string
@@ -189,6 +195,37 @@ func limitRange(r *http.Request, obj *Object) error {
 	return nil
 }
 
+// seekOrRefresh moves the current read pointer to the start of the file.
+// If f does not implement io.Seeker then the file is closed, and re-opened from the given filesystem.
+func seekOrRefresh(f fs.File, from fs.FS, name string) (fs.File, error) {
+	// If file can be seeked then seek it
+	if seeker, ok := f.(io.Seeker); ok {
+		_, err := seeker.Seek(0, 0)
+		return f, err
+	}
+
+	// Otherwise, close and reopen the file
+	_ = f.Close()
+	return from.Open(name)
+}
+
+// guessContentType attempts to guess the content type from the input reader.
+// It always returns a valid MIME type.
+// It returns true if at least some data was read from the reader.
+func guessContentType(r io.Reader) (string, bool) {
+	head := make([]byte, 261)
+	n, _ := io.ReadFull(r, head) // error can be safely ignored
+
+	t, _ := filetype.Match(head)
+	mt := t.MIME.Value
+
+	if mt == "" {
+		mt = "binary/octet-stream"
+	}
+
+	return mt, n > 0
+}
+
 func stat(ctx *RequestContext) (*Object, error) {
 	key, err := urlPathObjectKey(ctx.Request.URL.Path)
 	if err != nil {
@@ -198,6 +235,16 @@ func stat(ctx *RequestContext) (*Object, error) {
 	f, err := ctx.Filesystem.Open(key)
 	if err != nil {
 		return nil, unwrapFsError(err)
+	}
+
+	contentType, mustRefresh := guessContentType(f)
+
+	if mustRefresh {
+		// If file needs refreshing after guessing the content type then do so
+		f, err = seekOrRefresh(f, ctx.Filesystem, key)
+		if err != nil {
+			return nil, unwrapFsError(err)
+		}
 	}
 
 	fi, err := f.Stat()
@@ -210,6 +257,7 @@ func stat(ctx *RequestContext) (*Object, error) {
 		Size:         fi.Size(),
 		ReadCloser:   f,
 		LastModified: fi.ModTime().UTC(),
+		ContentType:  contentType,
 	}
 
 	err = limitRange(ctx.Request, obj)

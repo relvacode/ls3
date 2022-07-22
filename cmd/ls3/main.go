@@ -39,10 +39,9 @@ func RandStringRunes(n int, controlSet []rune) string {
 }
 
 type Command struct {
-	ListenAddr  string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
-	Domain      string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
-	MultiBucket bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
-
+	ListenAddr      string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
+	Domain          string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
+	MultiBucket     bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
 	AccessKeyId     string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
 	SecretAccessKey string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
 

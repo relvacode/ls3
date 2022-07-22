@@ -40,7 +40,7 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 	}
 
 	header.Set("Content-Length", strconv.Itoa(int(contentLength)))
-	header.Set("Content-Type", "binary/octet-stream")
+	header.Set("Content-Type", obj.ContentType)
 
 	ctx.SendPlain(http.StatusOK)
 	return nil
