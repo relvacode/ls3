@@ -12,8 +12,6 @@ import (
 const (
 	amzDateTimeFormat = "20060102T150405Z"
 	amzDateFormat     = "20060102"
-
-	headerXAmzContextSha256 = "x-amz-content-sha256"
 )
 
 // A Signer is a type capable of signing and verifying the authorization and request signature present in an HTTP request.

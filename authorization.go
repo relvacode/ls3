@@ -1,13 +1,12 @@
 package ls3
 
 import (
-	"bytes"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
+
+const awsSignatureVersionV4 = "AWS4-HMAC-SHA256"
 
 // growSlice grows slice b to length n.
 // If cap(b) < n then a new slice is allocated and the original contents are copied into it
@@ -22,27 +21,12 @@ func growSlice(b []byte, n int) []byte {
 	return grow
 }
 
-type WrappedError struct {
-	Cause error
-}
-
-func (e WrappedError) Unwrap() error { return e.Cause }
-
-type ErrInvalidCredential struct {
-	WrappedError
-}
-
-func (e *ErrInvalidCredential) Error() string {
-	return fmt.Sprintf("invalid credential: %s", e.Cause)
-}
-
-func ParseCredential(value []byte) (*Credential, error) {
-	var credentialParts = bytes.Split(value, []byte{'/'})
+func ParseCredential(value string) (*Credential, error) {
+	var credentialParts = strings.Split(value, "/")
 	if len(credentialParts) != 5 {
-		return nil, &ErrInvalidCredential{
-			WrappedError: WrappedError{
-				Cause: fmt.Errorf("wrong number of credential components (%d given where %d was expected", len(credentialParts), 5),
-			},
+		return nil, &Error{
+			ErrorCode: InvalidSecurity,
+			Message:   "The provided security credentials are not valid.",
 		}
 	}
 
@@ -50,28 +34,27 @@ func ParseCredential(value []byte) (*Credential, error) {
 	credential.AccessKeyID = credentialParts[0]
 
 	var err error
-	credential.Date, err = time.Parse(amzDateFormat, string(credentialParts[1]))
+	credential.Date, err = time.Parse(amzDateFormat, credentialParts[1])
 	if err != nil {
-		return nil, &ErrInvalidCredential{
-			WrappedError: WrappedError{
-				Cause: err,
-			},
+		return nil, &Error{
+			ErrorCode: InvalidSecurity,
+			Message:   "The provided security credentials are not valid.",
 		}
 	}
 
 	credential.Region = credentialParts[2]
 	credential.Service = credentialParts[3]
-	credential.Method = credentialParts[4]
+	credential.Type = credentialParts[4]
 
 	return credential, nil
 }
 
 type Credential struct {
-	AccessKeyID []byte
+	AccessKeyID string
 	Date        time.Time
-	Region      []byte
-	Service     []byte
-	Method      []byte
+	Region      string
+	Service     string
+	Type        string
 }
 
 func (c Credential) AppendFormat(b []byte) []byte {
@@ -83,48 +66,36 @@ func (c Credential) AppendFormat(b []byte) []byte {
 	b = append(b, '/')
 	b = append(b, c.Service...)
 	b = append(b, '/')
-	b = append(b, c.Method...)
+	b = append(b, c.Type...)
 
 	return b
 }
 
-type ErrInvalidAuthorizationHeader struct {
-	WrappedError
-}
-
-func (e *ErrInvalidAuthorizationHeader) Error() string {
-	return fmt.Sprintf("invalid authorization header: %s", e.Cause)
-}
-
-// ParseAuthorization parses the contents of the given Authorization header.
+// ParseAuthorizationHeader parses the contents of the given Authorization header.
 // Returns a non-nil *ErrInvalidAuthorizationHeader when an invalid header is given.
-func ParseAuthorization(hdr []byte) (*Authorization, error) {
+func ParseAuthorizationHeader(hdr string) (*Authorization, error) {
 	var auth = new(Authorization)
 
-	var methodParts = bytes.SplitN(hdr, []byte{' '}, 2)
-	if len(methodParts) < 2 {
-		return nil, &ErrInvalidAuthorizationHeader{
-			WrappedError: WrappedError{
-				Cause: errors.New("not missing authorization properties"),
-			},
+	var methodParts = strings.SplitN(hdr, " ", 2)
+	if len(methodParts) < 2 || methodParts[0] != awsSignatureVersionV4 {
+		return nil, &Error{
+			ErrorCode: InvalidRequest,
+			Message:   "The request is using the wrong signature version. Use AWS4-HMAC-SHA256 (Signature Version 4).",
 		}
 	}
 
-	auth.Method = methodParts[0]
-
-	var requestOptions = bytes.Split(methodParts[1], []byte{','})
-	for i, opt := range requestOptions {
-		var optionParts = bytes.SplitN(bytes.TrimSpace(opt), []byte{'='}, 2)
+	var requestOptions = strings.Split(methodParts[1], ",")
+	for _, opt := range requestOptions {
+		var optionParts = strings.SplitN(strings.TrimSpace(opt), "=", 2)
 		if len(optionParts) < 2 {
-			return nil, &ErrInvalidAuthorizationHeader{
-				WrappedError: WrappedError{
-					Cause: fmt.Errorf("missing key=value in header property %d", i),
-				},
+			return nil, &Error{
+				ErrorCode: AuthorizationHeaderMalformed,
+				Message:   "The authorization header that you provided is not valid.",
 			}
 		}
 
 		var (
-			key   = string(optionParts[0])
+			key   = optionParts[0]
 			value = optionParts[1]
 		)
 
@@ -133,24 +104,22 @@ func ParseAuthorization(hdr []byte) (*Authorization, error) {
 		case "Credential":
 			cr, err := ParseCredential(value)
 			if err != nil {
-				return nil, &ErrInvalidAuthorizationHeader{
-					WrappedError: WrappedError{
-						Cause: err,
-					},
+				return nil, &Error{
+					ErrorCode: AuthorizationHeaderMalformed,
+					Message:   "The authorization header that you provided is not valid.",
 				}
 			}
 
 			auth.Credentials = *cr
 		case "SignedHeaders":
-			auth.SignedHeaders = strings.Split(string(value), ";")
+			auth.SignedHeaders = strings.Split(value, ";")
 		case "Signature":
-			auth.Signature = make([]byte, hex.DecodedLen(len(value)))
-			_, err := hex.Decode(auth.Signature, value)
+			var err error
+			auth.Signature, err = hex.DecodeString(value)
 			if err != nil {
-				return nil, &ErrInvalidAuthorizationHeader{
-					WrappedError: WrappedError{
-						Cause: err,
-					},
+				return nil, &Error{
+					ErrorCode: AuthorizationHeaderMalformed,
+					Message:   "The authorization header that you provided is not valid.",
 				}
 			}
 		}
@@ -160,14 +129,13 @@ func ParseAuthorization(hdr []byte) (*Authorization, error) {
 }
 
 type Authorization struct {
-	Method        []byte
 	Credentials   Credential
 	SignedHeaders []string
 	Signature     []byte // raw decoded hex
 }
 
 func (a Authorization) AppendFormat(b []byte) []byte {
-	b = append(b, a.Method...)
+	b = append(b, awsSignatureVersionV4...)
 	b = append(b, ' ')
 	b = append(b, "Credential="...)
 	b = a.Credentials.AppendFormat(b)

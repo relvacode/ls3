@@ -9,12 +9,25 @@ import (
 	"io"
 	"net/http"
 	"net/textproto"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
 	amzUnsignedPayload = "UNSIGNED-PAYLOAD"
+	xAmzCredential     = "X-Amz-Credential"
+	xAmzAlgorithm      = "X-Amz-Algorithm"
+	xAmzDate           = "X-Amz-Date"
+	xAmzContextSha256  = "x-Amz-Content-Sha256"
+	xAmzExpires        = "X-Amz-Expires"
+	xAmzSignedHeaders  = "X-Amz-SignedHeaders"
+	xAmzSignature      = "X-Amz-Signature"
+)
+
+const (
+	minimumPresignedExpires = time.Second
+	maximumPresignedExpiry  = time.Second * 604800
 )
 
 // Trim leading and trailing spaces and replace sequential spaces with one space, following Trimall()
@@ -23,6 +36,46 @@ func signV4TrimAll(input string) string {
 	// Compress adjacent spaces (a space is determined by
 	// unicode.IsSpace() internally here) to one space and return
 	return strings.Join(strings.Fields(input), " ")
+}
+
+func payloadSha256Hex(r *http.Request, contentSha256 string) ([]byte, error) {
+	switch contentSha256 {
+	case "", amzUnsignedPayload:
+		return []byte(amzUnsignedPayload), nil
+	default:
+		contentShaRaw, _ := hex.DecodeString(contentSha256)
+
+		// Read request payload
+		var payload bytes.Buffer
+		_, err := io.Copy(&payload, r.Body)
+		closeErr := r.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+
+		// After body has been read by signature verification,
+		// replace the original request body with the raw payload
+		r.Body = io.NopCloser(&payload)
+
+		// Compute payload SHA256
+		computedPayloadShaHasher := sha256.New()
+		computedPayloadShaHasher.Write(payload.Bytes())
+		computedPayloadSha := computedPayloadShaHasher.Sum(nil)
+
+		if payload.Len() > 0 && subtle.ConstantTimeCompare(computedPayloadSha, contentShaRaw) != 1 {
+			return nil, &Error{
+				ErrorCode: BadDigest,
+				Message:   "The Content-MD5 or checksum value that you specified did not match what the server received.",
+			}
+		}
+
+		var payloadShaHex = make([]byte, hex.EncodedLen(len(computedPayloadSha)))
+		hex.Encode(payloadShaHex, computedPayloadSha)
+		return payloadShaHex, nil
+	}
 }
 
 func awsV4CanonicalRequest(r *http.Request, payloadShaHex []byte, signedHeaders []string) []byte {
@@ -37,10 +90,13 @@ func awsV4CanonicalRequest(r *http.Request, payloadShaHex []byte, signedHeaders 
 	b.WriteRune('\n')
 
 	// CanonicalQuerystring
+	// Query string must be decoded, and then re-encoded to sort the query keys.
 	var urlQuery = r.URL.Query()
-	var urlQuerySorted = urlQuery.Encode() // query string must be decoded, and then re-encoded to sort the query keys
 
-	b.WriteString(strings.ReplaceAll(urlQuerySorted, "+", "%20"))
+	// Delete the signature from the query, as it is not part of the signature calculation
+	urlQuery.Del(xAmzSignature)
+
+	b.WriteString(strings.ReplaceAll(urlQuery.Encode(), "+", "%20"))
 	b.WriteRune('\n')
 
 	// CanonicalHeaders
@@ -87,20 +143,31 @@ func awsV4CanonicalRequest(r *http.Request, payloadShaHex []byte, signedHeaders 
 }
 
 type SignAWSV4 struct {
-	Region                string
-	AccessKeyID           string
-	SecretAccessKey       string
-	MaxCredentialValidity time.Duration
+	Region          string
+	AccessKeyID     string
+	SecretAccessKey string
+
+	// timeNow is a function that returns the current time.
+	// Used for testing, if nil then time.Now is used.
+	timeNow func() time.Time
 }
 
 func (s SignAWSV4) SigningRegion() string {
 	return s.Region
 }
 
+func (s SignAWSV4) now() time.Time {
+	if s.timeNow == nil {
+		return time.Now()
+	}
+	return s.timeNow()
+}
+
 func (s SignAWSV4) computeStringToSign(at time.Time, canonicalRequest []byte) []byte {
 	var b bytes.Buffer
 
-	b.WriteString("AWS4-HMAC-SHA256\n")
+	b.WriteString(awsSignatureVersionV4)
+	b.WriteRune('\n')
 
 	// timeStampISO8601Format
 	b.WriteString(at.Format(amzDateTimeFormat))
@@ -115,7 +182,7 @@ func (s SignAWSV4) computeStringToSign(at time.Time, canonicalRequest []byte) []
 	// Hex(SHA256Hash(<CanonicalRequest>))
 	h := sha256.New()
 	h.Write(canonicalRequest)
-	b.WriteString(hex.EncodeToString(h.Sum(nil)))
+	hex.NewEncoder(&b).Write(h.Sum(nil))
 
 	return b.Bytes()
 }
@@ -129,40 +196,14 @@ func (s SignAWSV4) computeSigningKey(at time.Time) []byte {
 	return signed
 }
 
-func (s SignAWSV4) httpHeaderAmzRequestDate(r *http.Request) (time.Time, error) {
-	date := r.Header.Get("x-amz-date")
-	if date == "" {
-		return time.Time{}, &Error{
-			ErrorCode: InvalidArgument,
-			Message:   "Missing x-amz-date header.",
-		}
-	}
-
-	at, err := time.Parse(amzDateTimeFormat, date)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	if s.MaxCredentialValidity > 0 {
-		if at.Before(time.Now().Add(-s.MaxCredentialValidity)) {
-			return time.Time{}, &Error{
-				ErrorCode: ExpiredToken,
-				Message:   "The provided token has expired.",
-			}
-		}
-	}
-
-	return at, nil
-}
-
 func (s SignAWSV4) Sign(r *http.Request, payload []byte) error {
 	h := sha256.New()
 	h.Write(payload)
-	r.Header.Set("x-amz-content-sha256", fmt.Sprintf("%x", h.Sum(nil)))
+	r.Header.Set(xAmzContextSha256, fmt.Sprintf("%x", h.Sum(nil)))
 
-	t := time.Now().UTC()
+	t := s.now().UTC()
 
-	r.Header.Set("x-amz-date", t.Format(amzDateTimeFormat))
+	r.Header.Set(xAmzDate, t.Format(amzDateTimeFormat))
 
 	r.Header.Set("Host", r.Host)
 
@@ -176,7 +217,8 @@ func (s SignAWSV4) Sign(r *http.Request, payload []byte) error {
 	)
 
 	r.Header.Set("Authorization", fmt.Sprintf(
-		"AWS4-HMAC-SHA256 Credential=%s/%s/%s/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=%x",
+		"%s Credential=%s/%s/%s/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=%x",
+		awsSignatureVersionV4,
 		s.AccessKeyID,
 		t.Format(amzDateFormat),
 		s.Region,
@@ -186,13 +228,24 @@ func (s SignAWSV4) Sign(r *http.Request, payload []byte) error {
 	return nil
 }
 
-func (s SignAWSV4) Verify(r *http.Request) error {
-	at, err := s.httpHeaderAmzRequestDate(r)
-	if err != nil {
-		return err
+func (s SignAWSV4) VerifyHeaders(r *http.Request) error {
+	date := r.Header.Get(xAmzDate)
+	if date == "" {
+		return &Error{
+			ErrorCode: InvalidArgument,
+			Message:   "Missing x-amz-date header.",
+		}
 	}
 
-	auth, err := ParseAuthorization([]byte(r.Header.Get("Authorization")))
+	at, err := time.Parse(amzDateTimeFormat, date)
+	if err != nil {
+		return &Error{
+			ErrorCode: InvalidRequest,
+			Message:   "Invalid format of X-Amz-Date.",
+		}
+	}
+
+	auth, err := ParseAuthorizationHeader(r.Header.Get("Authorization"))
 	if err != nil {
 		return &Error{
 			ErrorCode: InvalidToken,
@@ -202,58 +255,16 @@ func (s SignAWSV4) Verify(r *http.Request) error {
 
 	// Server only supports a single set of credentials.
 	// Check that the request credentials ID matches this server
-	if reqCred := string(auth.Credentials.AccessKeyID); reqCred != s.AccessKeyID {
+	if auth.Credentials.AccessKeyID != s.AccessKeyID {
 		return &Error{
 			ErrorCode: InvalidAccessKeyId,
-			Message:   fmt.Sprintf("The access key ID %s does not exist.", reqCred),
+			Message:   fmt.Sprintf("The access key ID %s does not exist.", auth.Credentials.AccessKeyID),
 		}
 	}
 
-	var (
-		contentShaHeader = r.Header.Get(headerXAmzContextSha256)
-		payloadShaHex    []byte
-	)
-
-	switch contentShaHeader {
-	case "":
-		return &Error{
-			ErrorCode: MissingSecurityHeader,
-			Message:   fmt.Sprintf("Your request is missing the required header %s.", headerXAmzContextSha256),
-		}
-	case amzUnsignedPayload:
-		payloadShaHex = []byte(amzUnsignedPayload)
-	default:
-		contentShaRaw, _ := hex.DecodeString(contentShaHeader)
-
-		// Read request payload
-		var payload bytes.Buffer
-		_, err = io.Copy(&payload, r.Body)
-		closeErr := r.Body.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return err
-		}
-
-		// After body has been read by signature verification,
-		// replace the original request body with the raw payload
-		r.Body = io.NopCloser(&payload)
-
-		// Compute payload SHA256
-		computedPayloadShaHasher := sha256.New()
-		computedPayloadShaHasher.Write(payload.Bytes())
-		computedPayloadSha := computedPayloadShaHasher.Sum(nil)
-
-		if payload.Len() > 0 && subtle.ConstantTimeCompare(computedPayloadSha, contentShaRaw) != 1 {
-			return &Error{
-				ErrorCode: BadDigest,
-				Message:   "The Content-MD5 or checksum value that you specified did not match what the server received.",
-			}
-		}
-
-		payloadShaHex = make([]byte, hex.EncodedLen(len(computedPayloadSha)))
-		hex.Encode(payloadShaHex, computedPayloadSha)
+	payloadShaHex, err := payloadSha256Hex(r, r.Header.Get(xAmzContextSha256))
+	if err != nil {
+		return err
 	}
 
 	var (
@@ -270,5 +281,98 @@ func (s SignAWSV4) Verify(r *http.Request) error {
 	}
 
 	return nil
+}
 
+func (s SignAWSV4) VerifyQuery(r *http.Request) error {
+	var q = r.URL.Query()
+
+	if queryAlgorithm := q.Get(xAmzAlgorithm); queryAlgorithm != awsSignatureVersionV4 {
+		return &Error{
+			ErrorCode: InvalidRequest,
+			Message:   "The request is using the wrong signature version. Use AWS4-HMAC-SHA256 (Signature Version 4).",
+		}
+	}
+
+	date := q.Get(xAmzDate)
+	if date == "" {
+		return &Error{
+			ErrorCode: InvalidArgument,
+			Message:   "Missing x-amz-date header.",
+		}
+	}
+
+	at, err := time.Parse(amzDateTimeFormat, date)
+	if err != nil {
+		return &Error{
+			ErrorCode: InvalidRequest,
+			Message:   "Invalid format of X-Amz-Date.",
+		}
+	}
+
+	// Check that the pre-signed request has not expired
+	expiresInt, _ := strconv.Atoi(q.Get(xAmzExpires))
+	expires := time.Second * time.Duration(expiresInt)
+
+	if expires < minimumPresignedExpires || expires > maximumPresignedExpiry {
+		return &Error{
+			ErrorCode: InvalidRequest,
+			Message:   "Invalid value for X-Amz-Expires.",
+		}
+	}
+
+	if s.now().After(at.Add(expires)) {
+		return &Error{
+			ErrorCode: ExpiredToken,
+			Message:   "The provided token has expired.",
+		}
+	}
+
+	// Parse credentials from the credential parameter
+	credential, err := ParseCredential(q.Get(xAmzCredential))
+	if err != nil {
+		return err
+	}
+
+	// Server only supports a single set of credentials.
+	// Check that the request credentials ID matches this server
+	if credential.AccessKeyID != s.AccessKeyID {
+		return &Error{
+			ErrorCode: InvalidAccessKeyId,
+			Message:   fmt.Sprintf("The access key ID %s does not exist.", credential.AccessKeyID),
+		}
+	}
+
+	// We can ignore any errors or length to the request signature.
+	// An invalid signature will not match the computed signature
+	requestSignature, _ := hex.DecodeString(q.Get(xAmzSignature))
+
+	// Compute the payload SHA256 hex of the request
+	payloadShaHex, err := payloadSha256Hex(r, q.Get(xAmzContextSha256))
+	if err != nil {
+		return err
+	}
+
+	var (
+		req       = awsV4CanonicalRequest(r, payloadShaHex, q[xAmzSignedHeaders])
+		signature = sumHmacSha256(s.computeSigningKey(at), s.computeStringToSign(at, req))
+	)
+
+	// Check request signature is equal to the computed signature
+	if subtle.ConstantTimeCompare(signature, requestSignature) != 1 {
+		return &Error{
+			ErrorCode: SignatureDoesNotMatch,
+			Message:   "The request signature that the server calculated does not match the signature that you provided.",
+		}
+	}
+
+	return nil
+}
+
+func (s SignAWSV4) Verify(r *http.Request) error {
+	// If X-Amz-Algorithm is provided in the request then use query parameter based authorization
+	if r.URL.Query().Get(xAmzAlgorithm) != "" {
+		return s.VerifyQuery(r)
+	}
+
+	return s.VerifyHeaders(r)
 }
