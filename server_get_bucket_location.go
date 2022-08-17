@@ -11,6 +11,10 @@ func (s *Server) GetBucketLocation(ctx *RequestContext) *Error {
 		LocationConstraint string   `xml:",chardata"`
 	}
 
+	if err := EvaluatePolicy(GetBucketLocation, Resource(ctx.Bucket), ctx.Identity.ACL); err != nil {
+		return err
+	}
+
 	ctx.SendXML(http.StatusOK, &LocationConstraint{})
 	return nil
 }

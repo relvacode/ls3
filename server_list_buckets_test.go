@@ -10,7 +10,7 @@ import (
 func TestServer_ListBuckets(t *testing.T) {
 	rw := httptest.NewRecorder()
 
-	req := testSignedRequest(testSigner(), http.MethodGet, "/", "", nil, nil)
+	req := testSignedRequest(SignAWSV4{}, http.MethodGet, "/", "", nil, nil)
 	testServer().ServeHTTP(rw, req)
 
 	assert.Equal(t, http.StatusOK, rw.Code)

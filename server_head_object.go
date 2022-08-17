@@ -6,7 +6,20 @@ import (
 )
 
 func (s *Server) HeadObject(ctx *RequestContext) *Error {
-	obj, err := stat(ctx)
+	key, err := urlPathObjectKey(ctx.Request.URL.Path)
+	if err != nil {
+		// HEAD request that errors contains no response body
+		ctx.SendPlain(ErrorFrom(err).StatusCode)
+		return nil
+	}
+
+	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL); err != nil {
+		// HEAD request that errors contains no response body
+		ctx.SendPlain(err.StatusCode)
+		return nil
+	}
+
+	obj, err := stat(ctx, key)
 	if err != nil {
 		// HEAD request that errors contains no response body
 		ctx.SendPlain(ErrorFrom(err).StatusCode)

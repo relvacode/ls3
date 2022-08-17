@@ -10,7 +10,7 @@ import (
 func TestServer_HeadBucket(t *testing.T) {
 	rw := httptest.NewRecorder()
 
-	req := testSignedRequest(testSigner(), http.MethodHead, "/Bucket", "", nil, nil)
+	req := testSignedRequest(SignAWSV4{}, http.MethodHead, "/Bucket", "", nil, nil)
 	testServer().ServeHTTP(rw, req)
 
 	assert.Equal(t, http.StatusOK, rw.Code)

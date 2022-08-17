@@ -74,19 +74,27 @@ func Main(log *zap.Logger) error {
 		return err
 	}
 
-	var signer = ls3.SignAWSV4{
-		AccessKeyID:     cmd.AccessKeyId,
-		SecretAccessKey: cmd.SecretAccessKey,
-	}
-
-	if (signer.AccessKeyID == "") != (signer.SecretAccessKey == "") {
+	if (cmd.AccessKeyId == "") != (cmd.SecretAccessKey == "") {
 		return errors.New("both access key id and secret access key must be provided, or neither")
 	}
 
-	if signer.AccessKeyID == "" {
+	if cmd.AccessKeyId == "" {
 		log.Warn("ACCESS_KEY_ID not provided. Credentials will be generated automatically but will change next time the server starts!")
-		signer.AccessKeyID = RandStringRunes(20, []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
-		signer.SecretAccessKey = RandStringRunes(40, []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+		cmd.AccessKeyId = RandStringRunes(20, []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+		cmd.SecretAccessKey = RandStringRunes(40, []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+	}
+
+	keyring := ls3.Keyring{
+		cmd.AccessKeyId: &ls3.Identity{
+			AccessKeyID:     cmd.AccessKeyId,
+			SecretAccessKey: cmd.SecretAccessKey,
+			ACL: []*ls3.Policy{
+				{
+					Action:   []ls3.Action{"*"},
+					Resource: []ls3.Resource{"*"},
+				},
+			},
+		},
 	}
 
 	absPath, err := filepath.Abs(cmd.Positional.Path)
@@ -106,8 +114,8 @@ func Main(log *zap.Logger) error {
 		"Port":            port,
 		"Domain":          cmd.Domain,
 		"MultiBucket":     cmd.MultiBucket,
-		"AccessKeyID":     signer.AccessKeyID,
-		"SecretAccessKey": signer.SecretAccessKey,
+		"AccessKeyID":     cmd.AccessKeyId,
+		"SecretAccessKey": cmd.SecretAccessKey,
 	})
 
 	fileSystem := os.DirFS(absPath)
@@ -122,7 +130,7 @@ func Main(log *zap.Logger) error {
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, signer, buckets, cmd.Domain)
+		handler = ls3.NewServer(log, ls3.SignAWSV4{}, keyring, buckets, cmd.Domain)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,

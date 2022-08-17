@@ -22,6 +22,10 @@ func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
 		CommonPrefixes        []CommonPrefixes
 	}
 
+	if err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL); err != nil {
+		return err
+	}
+
 	maxKeys, err := listObjectsMaxKeys(ctx.Request)
 	if err != nil {
 		return ErrorFrom(err)

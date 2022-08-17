@@ -16,14 +16,14 @@ const (
 
 // A Signer is a type capable of signing and verifying the authorization and request signature present in an HTTP request.
 type Signer interface {
-	// Sign computes and signs the given HTTP request using the given request payload.
+	// Sign computes and signs the given HTTP request using the given request payload and Identity.
 	// payload should be the contents of r.Body.
-	Sign(r *http.Request, payload []byte) error
+	Sign(r *http.Request, identity *Identity, payload []byte) error
 
 	// Verify verifies the authorization and request signature present in the HTTP request.
 	// Verify should return a non-nil error on verification failure, ideally this should contain the underlying type *Error.
 	// If Verify reads data from r.Body, it must ensure that the data can be re-read from r if Verify returns a nil error.
-	Verify(r *http.Request) error
+	Verify(r *http.Request, provider IdentityProvider) (*Identity, error)
 }
 
 func sumHmacSha256(secret, data []byte) []byte {

@@ -226,11 +226,7 @@ func guessContentType(r io.Reader) (string, bool) {
 	return mt, n > 0
 }
 
-func stat(ctx *RequestContext) (*Object, error) {
-	key, err := urlPathObjectKey(ctx.Request.URL.Path)
-	if err != nil {
-		return nil, err
-	}
+func stat(ctx *RequestContext, key string) (*Object, error) {
 
 	f, err := ctx.Filesystem.Open(key)
 	if err != nil {

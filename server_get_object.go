@@ -18,7 +18,16 @@ func modQueryResponseHeader(q url.Values, hdr http.Header, queryKey, headerKey s
 }
 
 func (s *Server) GetObject(ctx *RequestContext) *Error {
-	obj, err := stat(ctx)
+	key, err := urlPathObjectKey(ctx.Request.URL.Path)
+	if err != nil {
+		return ErrorFrom(err)
+	}
+
+	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL); err != nil {
+		return err
+	}
+
+	obj, err := stat(ctx, key)
 	if err != nil {
 		return ErrorFrom(err)
 	}

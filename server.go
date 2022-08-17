@@ -19,6 +19,7 @@ type RequestContext struct {
 	Bucket     string
 	Filesystem fs.FS
 	Request    *http.Request
+	Identity   *Identity
 
 	rw http.ResponseWriter
 	// flag to indicate the context has already tried to encode the original payload.
@@ -88,31 +89,33 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 type Method func(ctx *RequestContext) *Error
 
-func NewServer(log *zap.Logger, signer Signer, buckets BucketFilesystemProvider, domain string) *Server {
+func NewServer(log *zap.Logger, signer Signer, identities IdentityProvider, buckets BucketFilesystemProvider, domain string) *Server {
 	var domainComponents []string
 	if len(domain) > 0 {
 		domainComponents = strings.Split(domain, ".")
 	}
 	return &Server{
-		log:     log,
-		signer:  signer,
-		buckets: buckets,
-		domain:  domainComponents,
-		uidGen:  uuid.New,
+		log:        log,
+		signer:     signer,
+		identities: identities,
+		buckets:    buckets,
+		domain:     domainComponents,
+		uidGen:     uuid.New,
 	}
 }
 
 type Server struct {
-	log     *zap.Logger
-	signer  Signer
-	buckets BucketFilesystemProvider
-	domain  []string
+	log        *zap.Logger
+	signer     Signer
+	identities IdentityProvider
+	buckets    BucketFilesystemProvider
+	domain     []string
 	// uidGen describes the function that generates request UUID
 	uidGen func() uuid.UUID
 }
 
-func (s *Server) method(name string, ctx *RequestContext, f Method) {
-	ctx.Logger = ctx.Logger.With(zap.String("method", name))
+func (s *Server) method(method string, ctx *RequestContext, f Method) {
+	ctx.Logger = ctx.Logger.With(zap.String("method", method))
 
 	err := f(ctx)
 	if err != nil {
@@ -142,12 +145,18 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		rw:      rw,
 	}
 
+	var err error
+
 	// Verify the request
-	err := s.signer.Verify(r)
+	ctx.Identity, err = s.signer.Verify(r, s.identities)
 	if err != nil {
 		ctx.SendKnownError(ErrorFrom(err))
 		return
 	}
+
+	log = s.log.With(
+		zap.String("identity", ctx.Identity.AccessKeyID),
+	)
 
 	var ok bool
 	ctx.Bucket, ok, err = bucketFromRequest(r, s.domain)

@@ -20,6 +20,10 @@ func (s *Server) ListBuckets(ctx *RequestContext) *Error {
 		}
 	}
 
+	if err := EvaluatePolicy(ListAllMyBuckets, "", ctx.Identity.ACL); err != nil {
+		return err
+	}
+
 	buckets, err := s.buckets.ListBuckets()
 	if err != nil {
 		return ErrorFrom(err)

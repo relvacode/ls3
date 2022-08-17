@@ -16,7 +16,7 @@ import (
 )
 
 func testServer() *Server {
-	srv := NewServer(zap.NewNop(), testSigner(), &SingleBucketFilesystem{FS: memfs.New()}, "")
+	srv := NewServer(zap.NewNop(), SignAWSV4{}, testIdentityProvider{}, &SingleBucketFilesystem{FS: memfs.New()}, "")
 	uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
 	srv.uidGen = func() uuid.UUID {
 		return uid
@@ -49,7 +49,7 @@ func testSignedRequest(signer Signer, method, path, query string, headers http.H
 		req.Header.Set("Content-Length", strconv.Itoa(len(payload)))
 	}
 
-	_ = signer.Sign(req, payload)
+	_ = signer.Sign(req, TestIdentity, payload)
 
 	return req
 }
@@ -58,7 +58,7 @@ func TestServer(t *testing.T) {
 	t.Run("InvalidMethod", func(t *testing.T) {
 		t.Run("host_style", func(t *testing.T) {
 			rw := httptest.NewRecorder()
-			req := testSignedRequest(testSigner(), http.MethodTrace, "/Path/to/Resource", "", nil, nil)
+			req := testSignedRequest(SignAWSV4{}, http.MethodTrace, "/Path/to/Resource", "", nil, nil)
 
 			srv := testServer()
 			srv.domain = []string{"testing"}
@@ -77,7 +77,7 @@ func TestServer(t *testing.T) {
 
 		t.Run("path_style", func(t *testing.T) {
 			rw := httptest.NewRecorder()
-			req := testSignedRequest(testSigner(), http.MethodTrace, "/bucket/Path/to/Resource", "", nil, nil)
+			req := testSignedRequest(SignAWSV4{}, http.MethodTrace, "/bucket/Path/to/Resource", "", nil, nil)
 			testServer().ServeHTTP(rw, req)
 
 			assert.Equal(t, http.StatusMethodNotAllowed, rw.Code)

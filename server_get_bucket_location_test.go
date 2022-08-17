@@ -10,7 +10,7 @@ import (
 func TestServer_GetBucketLocation(t *testing.T) {
 	rw := httptest.NewRecorder()
 
-	req := testSignedRequest(testSigner(), http.MethodGet, "/Bucket", "location=", nil, nil)
+	req := testSignedRequest(SignAWSV4{}, http.MethodGet, "/Bucket", "location=", nil, nil)
 	testServer().ServeHTTP(rw, req)
 
 	assert.Equal(t, http.StatusOK, rw.Code)
