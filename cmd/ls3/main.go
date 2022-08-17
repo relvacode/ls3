@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	cryto_rand "crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"github.com/jessevdk/go-flags"
 	"github.com/relvacode/interrupt"
 	"github.com/relvacode/ls3"
 	"go.uber.org/zap"
+	"io"
 	"math/rand"
 	"net"
 	"net/http"
@@ -40,6 +43,16 @@ func RandStringRunes(n int, controlSet []rune) string {
 		b[i] = controlSet[rand.Intn(len(controlSet))]
 	}
 	return string(b)
+}
+
+func SecureRandStringBase64(n int) string {
+	rawSecret := make([]byte, n)
+	_, err := io.ReadFull(cryto_rand.Reader, rawSecret)
+	if err != nil {
+		panic(err)
+	}
+
+	return base64.URLEncoding.WithPadding('+').EncodeToString(rawSecret)
 }
 
 func readPolicyFromFile(f string) ([]*ls3.PolicyStatement, error) {
@@ -122,7 +135,7 @@ func Main(log *zap.Logger) error {
 	if cmd.AccessKeyId == "" {
 		log.Warn("ACCESS_KEY_ID not provided. Credentials will be generated automatically but will change next time the server starts!")
 		cmd.AccessKeyId = RandStringRunes(20, []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
-		cmd.SecretAccessKey = RandStringRunes(40, []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"))
+		cmd.SecretAccessKey = SecureRandStringBase64(36)
 	}
 
 	keyring := ls3.Keyring{
