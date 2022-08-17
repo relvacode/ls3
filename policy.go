@@ -29,6 +29,7 @@ const (
 	StringNotLike             ConditionOperator = "StringNotLike"
 	IpAddress                 ConditionOperator = "IpAddress"
 	NotIpAddress              ConditionOperator = "NotIpAddress"
+	Bool                      ConditionOperator = "Bool"
 )
 
 func WildcardMatch[T ~string](rule, obj T) bool {
@@ -38,11 +39,6 @@ func WildcardMatch[T ~string](rule, obj T) bool {
 
 	// Wildcard any
 	if rule == "*" {
-		return true
-	}
-
-	// Exact match
-	if rule == obj {
 		return true
 	}
 
@@ -125,11 +121,11 @@ func (l *OptionalList[T]) UnmarshalJSON(b []byte) error {
 
 type PolicyConditions map[ConditionOperator]map[string]OptionalList[string]
 
-type PolicyContext interface {
+type PolicyContextVars interface {
 	Get(k string) (string, bool)
 }
 
-// MapContext implements PolicyContext for a map.
+// MapContext implements PolicyContextVars for a map.
 type MapContext map[string]string
 
 func (ctx MapContext) Get(k string) (string, bool) {
@@ -137,21 +133,21 @@ func (ctx MapContext) Get(k string) (string, bool) {
 	return v, ok
 }
 
-// NullContext implements PolicyContext but never returns a value
+// NullContext implements PolicyContextVars but never returns a value
 type NullContext struct{}
 
 func (NullContext) Get(_ string) (string, bool) {
 	return "", false
 }
 
-// joinContext implements PolicyContext by joining the current context with a parent.
+// joinContext implements PolicyContextVars by joining the current context with a parent.
 type joinContext struct {
-	parent PolicyContext
-	PolicyContext
+	parent PolicyContextVars
+	PolicyContextVars
 }
 
 func (j *joinContext) Get(k string) (string, bool) {
-	v, ok := j.PolicyContext.Get(k)
+	v, ok := j.PolicyContextVars.Get(k)
 	if !ok {
 		return j.parent.Get(k)
 	}
@@ -159,10 +155,10 @@ func (j *joinContext) Get(k string) (string, bool) {
 	return v, true
 }
 
-func JoinContext(parent PolicyContext, this PolicyContext) *joinContext {
+func JoinContext(parent PolicyContextVars, this PolicyContextVars) *joinContext {
 	return &joinContext{
-		parent:        parent,
-		PolicyContext: this,
+		parent:            parent,
+		PolicyContextVars: this,
 	}
 }
 
@@ -193,7 +189,7 @@ func ipOrCidr(v string) *net.IPNet {
 	}
 }
 
-func evaluateOperatorKey(operator ConditionOperator, key string, values []string, context PolicyContext) bool {
+func evaluateOperatorKey(operator ConditionOperator, key string, values []string, context PolicyContextVars) bool {
 	expect, ok := context.Get(key)
 	if !ok {
 		// No such key within context. Impossible to satisfy condition
@@ -291,13 +287,35 @@ func evaluateOperatorKey(operator ConditionOperator, key string, values []string
 			}
 		}
 		return true
+	case Bool:
+		var expectBool bool
+		switch expect {
+		case "true":
+			expectBool = true
+		case "false":
+		default:
+			// Expect is not a valid boolean
+			return false
+		}
+
+		for _, v := range values {
+			switch v {
+			case "true":
+				return expectBool == true
+			case "false":
+				return expectBool == false
+			default:
+				return false
+			}
+		}
+		return false
 	default:
 		// Unknown operator
 		return false
 	}
 }
 
-func evaluateOperator(operator ConditionOperator, conditions map[string]OptionalList[string], context PolicyContext) bool {
+func evaluateOperator(operator ConditionOperator, conditions map[string]OptionalList[string], context PolicyContextVars) bool {
 	for key, values := range conditions {
 		if !evaluateOperatorKey(operator, key, values, context) {
 			return false
@@ -307,7 +325,7 @@ func evaluateOperator(operator ConditionOperator, conditions map[string]Optional
 	return true
 }
 
-func MatchesConditions(conditions PolicyConditions, context PolicyContext) bool {
+func MatchesConditions(conditions PolicyConditions, context PolicyContextVars) bool {
 	if len(conditions) == 0 {
 		// Unconditional request
 		return true
@@ -322,7 +340,7 @@ func MatchesConditions(conditions PolicyConditions, context PolicyContext) bool 
 	return true
 }
 
-type Policy struct {
+type PolicyStatement struct {
 	// Deny marks this policy as an explicit deny.
 	Deny bool
 	// Action one or more actions that this policy applies to.
@@ -335,7 +353,7 @@ type Policy struct {
 
 // AppliesTo returns true if the given concrete action and resource matches this policy.
 // resource may be empty, in which case this policy applies as long as the action matches.
-func (p *Policy) AppliesTo(action Action, resource Resource, context PolicyContext) bool {
+func (p *PolicyStatement) AppliesTo(action Action, resource Resource, context PolicyContextVars) bool {
 	var matchesAction bool
 	for _, rule := range p.Action {
 		if WildcardMatch(rule, action) {
@@ -368,7 +386,7 @@ func (p *Policy) AppliesTo(action Action, resource Resource, context PolicyConte
 
 // EvaluatePolicy returns true if the given concrete action and resource applies to any of the given policies.
 // The default action is to deny.
-func EvaluatePolicy(action Action, resource Resource, policies []*Policy, context PolicyContext) *Error {
+func EvaluatePolicy(action Action, resource Resource, policies []*PolicyStatement, context PolicyContextVars) *Error {
 	var success bool
 	for _, policy := range policies {
 		// Only interested in explicit denies when at least on policy is successful

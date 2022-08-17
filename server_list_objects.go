@@ -20,7 +20,7 @@ type ListBucketResult struct {
 	CommonPrefixes []CommonPrefixes
 }
 
-// Get implements PolicyContext based on parameters set for a list bucket request
+// Get implements PolicyContextVars based on parameters set for a list bucket request
 func (r *ListBucketResult) Get(k string) (string, bool) {
 	switch k {
 	case "s3:delimiter":
@@ -55,7 +55,7 @@ func (s *Server) ListObjects(ctx *RequestContext) *Error {
 		EncodingType: objectKeyEncoding,
 	}
 
-	if err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL, JoinContext(ctx, &result)); err != nil {
+	if err := ctx.CheckAccess(ListBucket, Resource(ctx.Bucket), &result); err != nil {
 		return err
 	}
 

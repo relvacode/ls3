@@ -6,7 +6,7 @@ package ls3
 var TestIdentity = &Identity{
 	AccessKeyID:     "AKIAIOSFODNN7EXAMPLE",
 	SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-	ACL: []*Policy{
+	Policy: []*PolicyStatement{
 		{
 			Action:   []Action{"*"},
 			Resource: []Resource{"*"},

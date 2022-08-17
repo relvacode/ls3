@@ -51,7 +51,7 @@ func TestWildcardMatch(t *testing.T) {
 }
 
 func TestEvaluatePolicy(t *testing.T) {
-	acl := []*Policy{
+	acl := []*PolicyStatement{
 		{
 			Action: []Action{
 				"test:Wildcard*",
@@ -253,6 +253,42 @@ func TestMatchesConditions(t *testing.T) {
 			},
 			MapContext{
 				"key": "127.0.0.1",
+			},
+		))
+	})
+	t.Run("matches_Bool_true", func(t *testing.T) {
+		assert.True(t, MatchesConditions(
+			PolicyConditions{
+				Bool: map[string]OptionalList[string]{
+					"key": []string{"true"},
+				},
+			},
+			MapContext{
+				"key": "true",
+			},
+		))
+	})
+	t.Run("matches_Bool_false", func(t *testing.T) {
+		assert.True(t, MatchesConditions(
+			PolicyConditions{
+				Bool: map[string]OptionalList[string]{
+					"key": []string{"false"},
+				},
+			},
+			MapContext{
+				"key": "false",
+			},
+		))
+	})
+	t.Run("matches_Bool_notbool", func(t *testing.T) {
+		assert.False(t, MatchesConditions(
+			PolicyConditions{
+				Bool: map[string]OptionalList[string]{
+					"key": []string{"false"},
+				},
+			},
+			MapContext{
+				"key": "123",
 			},
 		))
 	})

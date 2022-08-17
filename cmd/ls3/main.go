@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/jessevdk/go-flags"
 	"github.com/relvacode/interrupt"
@@ -24,6 +25,9 @@ Directory         {{ .AbsPath }}{{ if .MultiBucket }}/[*]{{ end }}
 Endpoint          http://{{if .Domain }}{{ .Domain }}{{ else }}{{ .Host }}{{ end }}:{{ .Port }}
 Access Key ID     {{ .AccessKeyID }}
 Secret Access Key {{ .SecretAccessKey }}
+
+! The default credentials have full access to this system and its data
+! unless a global policy explicitly denies access.
 `
 
 func init() {
@@ -38,12 +42,30 @@ func RandStringRunes(n int, controlSet []rune) string {
 	return string(b)
 }
 
+func readPolicyFromFile(f string) ([]*ls3.PolicyStatement, error) {
+	r, err := os.Open(f)
+	if err != nil {
+		return nil, err
+	}
+
+	defer r.Close()
+
+	var acl []*ls3.PolicyStatement
+	err = json.NewDecoder(r).Decode(&acl)
+	if err != nil {
+		return nil, err
+	}
+
+	return acl, nil
+}
+
 type Command struct {
-	ListenAddr      string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
-	Domain          string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
-	MultiBucket     bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
-	AccessKeyId     string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
-	SecretAccessKey string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
+	ListenAddr       string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
+	Domain           string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
+	MultiBucket      bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
+	AccessKeyId      string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
+	SecretAccessKey  string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
+	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY" description:"Read the global server access policy from this file."`
 
 	Positional struct {
 		Path string `required:"true" description:"The root directory to serve"`
@@ -74,6 +96,25 @@ func Main(log *zap.Logger) error {
 		return err
 	}
 
+	var globalPolicy []*ls3.PolicyStatement
+
+	// Read global policy from file (if defined)
+	if cmd.GlobalPolicyFile != "" {
+		globalPolicy, err = readPolicyFromFile(cmd.GlobalPolicyFile)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Otherwise, the global policy is allow all.
+		// This has the effect of using identity specific policies only.
+		globalPolicy = []*ls3.PolicyStatement{
+			{
+				Resource: []ls3.Resource{"*"},
+				Action:   []ls3.Action{"*"},
+			},
+		}
+	}
+
 	if (cmd.AccessKeyId == "") != (cmd.SecretAccessKey == "") {
 		return errors.New("both access key id and secret access key must be provided, or neither")
 	}
@@ -85,10 +126,12 @@ func Main(log *zap.Logger) error {
 	}
 
 	keyring := ls3.Keyring{
+		// The default identity (provided directly on the command line)
+		// always has full access to the system unless otherwise denied by a global policy.
 		cmd.AccessKeyId: &ls3.Identity{
 			AccessKeyID:     cmd.AccessKeyId,
 			SecretAccessKey: cmd.SecretAccessKey,
-			ACL: []*ls3.Policy{
+			Policy: []*ls3.PolicyStatement{
 				{
 					Action:   []ls3.Action{"*"},
 					Resource: []ls3.Resource{"*"},
@@ -130,7 +173,7 @@ func Main(log *zap.Logger) error {
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, ls3.SignAWSV4{}, keyring, buckets, cmd.Domain)
+		handler = ls3.NewServer(log, ls3.SignAWSV4{}, keyring, buckets, cmd.Domain, globalPolicy)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,

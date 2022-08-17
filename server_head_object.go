@@ -22,7 +22,7 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 
 	_ = obj.Close()
 
-	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL, JoinContext(ctx, obj)); err != nil {
+	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), obj); err != nil {
 		// HEAD request that errors contains no response body
 		ctx.SendPlain(err.StatusCode)
 		return nil

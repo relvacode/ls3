@@ -30,7 +30,7 @@ type Object struct {
 	ETag string
 }
 
-// Get implements PolicyContext for this Object
+// Get implements PolicyContextVars for this Object
 func (obj *Object) Get(k string) (string, bool) {
 	switch k {
 	case "ls3:ObjectSize":

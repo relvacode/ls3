@@ -28,22 +28,48 @@ type RequestContext struct {
 	// Is this connection secure
 	Secure bool
 
+	globalPolicy []*PolicyStatement
+
 	rw http.ResponseWriter
 	// flag to indicate the context has already tried to encode the original payload.
 	// Stops an endless recursion when SendXML attempts to encode a poisoned error.
 	failedXmlEncode bool
 }
 
-// Get implements PolicyContext for this request.
+// Get implements PolicyContextVars for this request.
 func (ctx *RequestContext) Get(k string) (string, bool) {
 	switch k {
 	case "aws:SourceIp":
 		return ctx.RemoteIP.String(), true
-	case "ls3:Secure":
+	case "aws:SecureTransport":
 		return strconv.FormatBool(ctx.Secure), true
 	default:
 		return "", false
 	}
+}
+
+// CheckAccess verifies that the current identity has the appropriate permissions to execute the given access for the given resource.
+// vars are additional PolicyContextVars that will be used in the conditional policy evaluation.
+// CheckAccess will first verify that the request meets the global policy,
+// if that succeeds it will then check the identity specific PolicyStatement.
+func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars PolicyContextVars) *Error {
+	policyContext := JoinContext(ctx, vars)
+
+	// Check global policy first
+	err := EvaluatePolicy(action, resource, ctx.globalPolicy, policyContext)
+	if err != nil {
+		return err
+	}
+
+	if len(ctx.Identity.Policy) > 0 {
+		// Check if identity specific policy
+		err = EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (ctx *RequestContext) Header() http.Header {
@@ -108,27 +134,29 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 type Method func(ctx *RequestContext) *Error
 
-func NewServer(log *zap.Logger, signer Signer, identities IdentityProvider, buckets BucketFilesystemProvider, domain string) *Server {
+func NewServer(log *zap.Logger, signer Signer, identities IdentityProvider, buckets BucketFilesystemProvider, domain string, globalPolicy []*PolicyStatement) *Server {
 	var domainComponents []string
 	if len(domain) > 0 {
 		domainComponents = strings.Split(domain, ".")
 	}
 	return &Server{
-		log:        log,
-		signer:     signer,
-		identities: identities,
-		buckets:    buckets,
-		domain:     domainComponents,
-		uidGen:     uuid.New,
+		log:          log,
+		signer:       signer,
+		identities:   identities,
+		buckets:      buckets,
+		domain:       domainComponents,
+		globalPolicy: globalPolicy,
+		uidGen:       uuid.New,
 	}
 }
 
 type Server struct {
-	log        *zap.Logger
-	signer     Signer
-	identities IdentityProvider
-	buckets    BucketFilesystemProvider
-	domain     []string
+	log          *zap.Logger
+	signer       Signer
+	identities   IdentityProvider
+	buckets      BucketFilesystemProvider
+	domain       []string
+	globalPolicy []*PolicyStatement
 	// uidGen describes the function that generates request UUID
 	uidGen func() uuid.UUID
 }
@@ -169,8 +197,9 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		// TODO configure RemoteIP through X-Forwarded-Ip
 		RemoteIP: remoteIP,
 		// TODO configure secure through X-Forwarded-Proto
-		Secure: r.TLS != nil,
-		rw:     rw,
+		Secure:       r.TLS != nil,
+		globalPolicy: s.globalPolicy,
+		rw:           rw,
 	}
 
 	var err error

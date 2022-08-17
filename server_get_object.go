@@ -30,7 +30,7 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 
 	defer obj.Close()
 
-	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL, JoinContext(ctx, obj)); err != nil {
+	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), obj); err != nil {
 		return err
 	}
 

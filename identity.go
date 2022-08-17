@@ -3,7 +3,7 @@ package ls3
 type Identity struct {
 	AccessKeyID     string
 	SecretAccessKey string
-	ACL             []*Policy
+	Policy          []*PolicyStatement
 }
 
 type IdentityProvider interface {

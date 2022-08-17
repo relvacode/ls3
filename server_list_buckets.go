@@ -20,7 +20,7 @@ func (s *Server) ListBuckets(ctx *RequestContext) *Error {
 		}
 	}
 
-	if err := EvaluatePolicy(ListAllMyBuckets, "", ctx.Identity.ACL, ctx); err != nil {
+	if err := ctx.CheckAccess(ListAllMyBuckets, "", NullContext{}); err != nil {
 		return err
 	}
 

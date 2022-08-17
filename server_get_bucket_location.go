@@ -11,7 +11,7 @@ func (s *Server) GetBucketLocation(ctx *RequestContext) *Error {
 		LocationConstraint string   `xml:",chardata"`
 	}
 
-	if err := EvaluatePolicy(GetBucketLocation, Resource(ctx.Bucket), ctx.Identity.ACL, ctx); err != nil {
+	if err := ctx.CheckAccess(GetBucketLocation, Resource(ctx.Bucket), NullContext{}); err != nil {
 		return err
 	}
 

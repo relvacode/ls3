@@ -6,9 +6,11 @@ import "net/http"
 const amzRegion = "us-east-1"
 
 func (s *Server) HeadBucket(ctx *RequestContext) *Error {
-	err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL, ctx)
+	err := ctx.CheckAccess(ListBucket, Resource(ctx.Bucket), NullContext{})
 	if err != nil {
-		return err
+		// HEAD returns no body
+		ctx.SendPlain(err.StatusCode)
+		return nil
 	}
 
 	ctx.Header().Set("x-amz-bucket-region", amzRegion)
