@@ -61,12 +61,10 @@ func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars Po
 		return err
 	}
 
-	if len(ctx.Identity.Policy) > 0 {
-		// Check if identity specific policy
-		err = EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
-		if err != nil {
-			return err
-		}
+	// Check if identity specific policy matches request
+	err = EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
+	if err != nil {
+		return err
 	}
 
 	return nil
