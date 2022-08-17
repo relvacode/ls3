@@ -6,7 +6,7 @@ import "net/http"
 const amzRegion = "us-east-1"
 
 func (s *Server) HeadBucket(ctx *RequestContext) *Error {
-	err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL)
+	err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL, ctx)
 	if err != nil {
 		return err
 	}

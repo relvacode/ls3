@@ -23,16 +23,16 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 		return ErrorFrom(err)
 	}
 
-	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL); err != nil {
-		return err
-	}
-
 	obj, err := stat(ctx, key)
 	if err != nil {
 		return ErrorFrom(err)
 	}
 
 	defer obj.Close()
+
+	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL, JoinContext(ctx, obj)); err != nil {
+		return err
+	}
 
 	var (
 		query  = ctx.Request.URL.Query()

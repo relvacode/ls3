@@ -7,7 +7,9 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -21,10 +23,27 @@ type RequestContext struct {
 	Request    *http.Request
 	Identity   *Identity
 
+	// The client IP address
+	RemoteIP net.IP
+	// Is this connection secure
+	Secure bool
+
 	rw http.ResponseWriter
 	// flag to indicate the context has already tried to encode the original payload.
 	// Stops an endless recursion when SendXML attempts to encode a poisoned error.
 	failedXmlEncode bool
+}
+
+// Get implements PolicyContext for this request.
+func (ctx *RequestContext) Get(k string) (string, bool) {
+	switch k {
+	case "aws:SourceIp":
+		return ctx.RemoteIP.String(), true
+	case "ls3:Secure":
+		return strconv.FormatBool(ctx.Secure), true
+	default:
+		return "", false
+	}
 }
 
 func (ctx *RequestContext) Header() http.Header {
@@ -138,11 +157,20 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		zap.String("remote-addr", r.RemoteAddr),
 	)
 
+	var remoteIP net.IP
+	if remoteIpStr, _, splitHostErr := net.SplitHostPort(r.RemoteAddr); splitHostErr == nil {
+		remoteIP = net.ParseIP(remoteIpStr)
+	}
+
 	ctx := &RequestContext{
 		Logger:  log,
 		Request: r,
 		ID:      requestId,
-		rw:      rw,
+		// TODO configure RemoteIP through X-Forwarded-Ip
+		RemoteIP: remoteIP,
+		// TODO configure secure through X-Forwarded-Proto
+		Secure: r.TLS != nil,
+		rw:     rw,
 	}
 
 	var err error

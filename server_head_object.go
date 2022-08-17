@@ -13,12 +13,6 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 		return nil
 	}
 
-	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL); err != nil {
-		// HEAD request that errors contains no response body
-		ctx.SendPlain(err.StatusCode)
-		return nil
-	}
-
 	obj, err := stat(ctx, key)
 	if err != nil {
 		// HEAD request that errors contains no response body
@@ -27,6 +21,12 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 	}
 
 	_ = obj.Close()
+
+	if err := EvaluatePolicy(GetObject, Resource(ctx.Bucket+"/"+key), ctx.Identity.ACL, JoinContext(ctx, obj)); err != nil {
+		// HEAD request that errors contains no response body
+		ctx.SendPlain(err.StatusCode)
+		return nil
+	}
 
 	var header = ctx.Header()
 

@@ -4,28 +4,39 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"net/http"
+	"strconv"
 )
 
+type ListBucketResultV2 struct {
+	XMLName               xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult"`
+	Name                  string
+	Prefix                string
+	Delimiter             string
+	MaxKeys               int
+	IsTruncated           bool
+	EncodingType          string
+	ContinuationToken     string
+	NextContinuationToken string
+	StartAfter            string
+	Contents              []Contents
+	CommonPrefixes        []CommonPrefixes
+}
+
+// Get implements PolicyContext based on parameters set for a list bucket objects V2 request
+func (r *ListBucketResultV2) Get(k string) (string, bool) {
+	switch k {
+	case "s3:delimiter":
+		return r.Delimiter, true
+	case "s3:prefix":
+		return r.Prefix, true
+	case "s3:max-keys":
+		return strconv.Itoa(r.MaxKeys), true
+	default:
+		return "", false
+	}
+}
+
 func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
-	type ListBucketResult struct {
-		XMLName               xml.Name `xml:"http://s3.amazonaws.com/doc/2006-03-01/ ListBucketResult"`
-		Name                  string
-		Prefix                string
-		Delimiter             string
-		MaxKeys               int
-		IsTruncated           bool
-		EncodingType          string
-		ContinuationToken     string
-		NextContinuationToken string
-		StartAfter            string
-		Contents              []Contents
-		CommonPrefixes        []CommonPrefixes
-	}
-
-	if err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL); err != nil {
-		return err
-	}
-
 	maxKeys, err := listObjectsMaxKeys(ctx.Request)
 	if err != nil {
 		return ErrorFrom(err)
@@ -37,7 +48,7 @@ func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
 	}
 
 	var query = ctx.Request.URL.Query()
-	var result = ListBucketResult{
+	var result = ListBucketResultV2{
 		Name:              ctx.Bucket,
 		Prefix:            query.Get("prefix"),
 		MaxKeys:           maxKeys,
@@ -45,6 +56,10 @@ func (s *Server) ListObjectsV2(ctx *RequestContext) *Error {
 		ContinuationToken: query.Get("continuation-token"),
 		StartAfter:        query.Get("start-after"),
 		EncodingType:      objectKeyEncoding,
+	}
+
+	if err := EvaluatePolicy(ListBucket, Resource(ctx.Bucket), ctx.Identity.ACL, JoinContext(ctx, &result)); err != nil {
+		return err
 	}
 
 	var it = NewBucketIterator(ctx.Filesystem)

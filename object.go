@@ -10,6 +10,7 @@ import (
 	"net/textproto"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,20 @@ type Object struct {
 	// ETag represents the ETag field of the Object.
 	// It is always empty.
 	ETag string
+}
+
+// Get implements PolicyContext for this Object
+func (obj *Object) Get(k string) (string, bool) {
+	switch k {
+	case "ls3:ObjectSize":
+		return strconv.FormatInt(obj.Size, 10), true
+	case "ls3:ObjectContentType":
+		return obj.ContentType, true
+	case "ls3:ObjectLastModified":
+		return obj.LastModified.Format(time.RFC3339), true
+	default:
+		return "", false
+	}
 }
 
 func urlPathObjectKey(urlPath string) (string, error) {
@@ -227,7 +242,6 @@ func guessContentType(r io.Reader) (string, bool) {
 }
 
 func stat(ctx *RequestContext, key string) (*Object, error) {
-
 	f, err := ctx.Filesystem.Open(key)
 	if err != nil {
 		return nil, unwrapFsError(err)
