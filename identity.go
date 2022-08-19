@@ -13,7 +13,7 @@ import (
 
 const (
 	// IdentityUnauthenticatedPublic is a special AccessKeyId for unauthenticated requests.
-	IdentityUnauthenticatedPublic = "public"
+	IdentityUnauthenticatedPublic = ""
 )
 
 var ErrMissingAccessKeyId = &Error{
@@ -117,10 +117,6 @@ func (fp *FileIdentityProvider) load() (Keyring, error) {
 
 	var keyring = make(Keyring, len(identities))
 	for i, identity := range identities {
-		if identity.AccessKeyId == "" {
-			return nil, fmt.Errorf("identity %d: missing AccessKeyId", i)
-		}
-
 		_, ok := keyring[identity.AccessKeyId]
 		if ok {
 			return nil, fmt.Errorf("identity %d (%s): multiple identities with the same AccessKeyId", i, identity.AccessKeyId)

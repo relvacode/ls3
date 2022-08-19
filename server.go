@@ -45,6 +45,8 @@ func (ctx *RequestContext) Get(k string) (string, bool) {
 		return strconv.FormatBool(ctx.Secure), true
 	case "aws:username":
 		return ctx.Identity.Name, true
+	case "ls3:authenticated":
+		return strconv.FormatBool(ctx.Identity.AccessKeyId != IdentityUnauthenticatedPublic), true
 	default:
 		return "", false
 	}

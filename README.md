@@ -40,7 +40,8 @@ command-line or environment, or ls3 will generate random keys on startup.
 
 #### Public Identity
 
-The `public` identity is a special identity used for when a request provides no authentication mechanism.
+The `public` identity is a special identity used for when a request provides no authentication mechanism. A public
+identity is one that has an empty `AccessKeyId`.
 
 By default, the `public` identity is denied access to everything unless you enable public access.
 
@@ -49,7 +50,7 @@ When public access is not enabled, the `public` identity is configured as such:
 ```json
 {
   "Name": "public",
-  "AccessKeyId": "public",
+  "AccessKeyId": "",
   "Policy": [
     {
       "Deny": true,
@@ -174,3 +175,4 @@ These context keys apply to all requests
 | `aws:SourceIp`        | `IpAddress` | The IP address of the client                                            |
 | `aws:SecureTransport` | `Bool`      | Was the request made over HTTPS                                         |
 | `aws:username`        | `String`    | The `Name` of the identity making the request. `public` if unauthorized |
+| `ls3:authenticated`   | `Bool`      | Is the request made with an authenticated identity                      |

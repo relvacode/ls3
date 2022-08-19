@@ -156,7 +156,7 @@ func Main(log *zap.Logger) error {
 			},
 		},
 		ls3.IdentityUnauthenticatedPublic: &ls3.Identity{
-			Name:        ls3.IdentityUnauthenticatedPublic,
+			Name:        "public",
 			AccessKeyId: ls3.IdentityUnauthenticatedPublic,
 			Policy: []*ls3.PolicyStatement{
 				{
