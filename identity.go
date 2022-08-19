@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	// IdentityUnauthenticated is a special AccessKeyId for unauthenticated requests.
-	IdentityUnauthenticated = "UNAUTHENTICATED"
+	// IdentityUnauthenticatedPublic is a special AccessKeyId for unauthenticated requests.
+	IdentityUnauthenticatedPublic = "public"
 )
 
 var ErrMissingAccessKeyId = &Error{

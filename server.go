@@ -219,9 +219,9 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	// Identity not present in the request.
-	// Ask the identity provider to provide for IdentityUnauthenticated
+	// Ask the identity provider to provide for IdentityUnauthenticatedPublic
 	if ctx.Identity == nil {
-		ctx.Identity, err = s.identities.Get(IdentityUnauthenticated)
+		ctx.Identity, err = s.identities.Get(IdentityUnauthenticatedPublic)
 		if err != nil {
 			ctx.SendKnownError(ErrorFrom(err))
 			return

@@ -25,7 +25,7 @@ import (
 const ls3StartupTemplate = `
 [Lightweight Object Storage Server]
 Version           {{ .Version }}
-Directory         {{ .AbsPath }}{{ if .MultiBucket }}{{ .Sep }}[*]{{ end }}
+Directory         {{ .AbsPath }}{{ .Sep }}[*]
 Endpoint          http://{{if .Domain }}{{ .Domain }}{{ else }}{{ .Host }}{{ end }}:{{ .Port }}
 Public Access     {{ .PublicAccess }}
 Access Key ID     {{ .AccessKeyId }}
@@ -77,7 +77,6 @@ func readPolicyFromFile(f string) ([]*ls3.PolicyStatement, error) {
 type Command struct {
 	ListenAddr       string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
 	Domain           string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
-	MultiBucket      bool   `long:"multi-bucket" env:"MULTI_BUCKET" description:"Treat each requested bucket as a subdirectory of the base filesystem"`
 	AccessKeyId      string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
 	SecretAccessKey  string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
 	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY" description:"Read the global server access policy from this file."`
@@ -156,9 +155,9 @@ func Main(log *zap.Logger) error {
 				},
 			},
 		},
-		ls3.IdentityUnauthenticated: &ls3.Identity{
-			Name:        ls3.IdentityUnauthenticated,
-			AccessKeyId: ls3.IdentityUnauthenticated,
+		ls3.IdentityUnauthenticatedPublic: &ls3.Identity{
+			Name:        ls3.IdentityUnauthenticatedPublic,
+			AccessKeyId: ls3.IdentityUnauthenticatedPublic,
 			Policy: []*ls3.PolicyStatement{
 				{
 					Deny:     !cmd.PublicAccess,
@@ -199,24 +198,16 @@ func Main(log *zap.Logger) error {
 		"Port":            port,
 		"PublicAccess":    cmd.PublicAccess,
 		"Domain":          cmd.Domain,
-		"MultiBucket":     cmd.MultiBucket,
 		"AccessKeyId":     cmd.AccessKeyId,
 		"SecretAccessKey": cmd.SecretAccessKey,
 	})
 
 	fileSystem := os.DirFS(absPath)
 
-	var buckets ls3.BucketFilesystemProvider
-	if cmd.MultiBucket {
-		buckets = &ls3.SubdirBucketFilesystem{FS: fileSystem}
-	} else {
-		buckets = &ls3.SingleBucketFilesystem{FS: fileSystem}
-	}
-
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, ls3.SignAWSV4{}, identityProvider, buckets, cmd.Domain, globalPolicy)
+		handler = ls3.NewServer(log, ls3.SignAWSV4{}, identityProvider, &ls3.SubdirBucketFilesystem{FS: fileSystem}, cmd.Domain, globalPolicy)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,
