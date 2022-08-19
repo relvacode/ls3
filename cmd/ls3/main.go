@@ -26,7 +26,7 @@ const ls3StartupTemplate = `
 Version           {{ .Version }}
 Directory         {{ .AbsPath }}{{ if .MultiBucket }}/[*]{{ end }}
 Endpoint          http://{{if .Domain }}{{ .Domain }}{{ else }}{{ .Host }}{{ end }}:{{ .Port }}
-Access Key ID     {{ .AccessKeyID }}
+Access Key ID     {{ .AccessKeyId }}
 Secret Access Key {{ .SecretAccessKey }}
 
 ! The default credentials have full access to this system and its data
@@ -79,6 +79,7 @@ type Command struct {
 	AccessKeyId      string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
 	SecretAccessKey  string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
 	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY" description:"Read the global server access policy from this file."`
+	IdentityFile     string `long:"identities" env:"IDENTITIES" description:"Read additional identities from this file."`
 
 	Positional struct {
 		Path string `required:"true" description:"The root directory to serve"`
@@ -138,12 +139,12 @@ func Main(log *zap.Logger) error {
 		cmd.SecretAccessKey = SecureRandStringBase64(36)
 	}
 
-	keyring := ls3.Keyring{
+	rootKeyring := ls3.Keyring{
 		// The default identity root (provided directly on the command line or generated automatically)
 		// always has full access to the system unless otherwise denied by a global policy.
 		cmd.AccessKeyId: &ls3.Identity{
 			Name:            "root",
-			AccessKeyID:     cmd.AccessKeyId,
+			AccessKeyId:     cmd.AccessKeyId,
 			SecretAccessKey: cmd.SecretAccessKey,
 			Policy: []*ls3.PolicyStatement{
 				{
@@ -152,6 +153,17 @@ func Main(log *zap.Logger) error {
 				},
 			},
 		},
+	}
+
+	var identityProvider ls3.IdentityProvider = rootKeyring
+
+	if cmd.IdentityFile != "" {
+		fromFile, err := ls3.NewFileIdentityProvider(log, cmd.IdentityFile, time.Minute*5)
+		if err != nil {
+			return err
+		}
+
+		identityProvider = ls3.MultiIdentityProvider{rootKeyring, fromFile}
 	}
 
 	absPath, err := filepath.Abs(cmd.Positional.Path)
@@ -171,7 +183,7 @@ func Main(log *zap.Logger) error {
 		"Port":            port,
 		"Domain":          cmd.Domain,
 		"MultiBucket":     cmd.MultiBucket,
-		"AccessKeyID":     cmd.AccessKeyId,
+		"AccessKeyId":     cmd.AccessKeyId,
 		"SecretAccessKey": cmd.SecretAccessKey,
 	})
 
@@ -187,7 +199,7 @@ func Main(log *zap.Logger) error {
 	var (
 		ctx     = interrupt.Context(context.Background())
 		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, ls3.SignAWSV4{}, keyring, buckets, cmd.Domain, globalPolicy)
+		handler = ls3.NewServer(log, ls3.SignAWSV4{}, identityProvider, buckets, cmd.Domain, globalPolicy)
 		server  = &http.Server{
 			Addr:    cmd.ListenAddr,
 			Handler: handler,

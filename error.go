@@ -27,6 +27,7 @@ var (
 	MalformedXML                 = ErrorCode{Code: "MalformedXML", StatusCode: 400}
 	AuthorizationHeaderMalformed = ErrorCode{Code: "AuthorizationHeaderMalformed", StatusCode: 400}
 	InvalidSecurity              = ErrorCode{Code: "InvalidSecurity", StatusCode: 403}
+	AccountProblem               = ErrorCode{Code: "AccountProblem", StatusCode: 403}
 )
 
 type Error struct {
@@ -36,6 +37,14 @@ type Error struct {
 
 func (e *Error) Error() string {
 	return fmt.Sprintf("[%d] %s: %s", e.StatusCode, e.Code, e.Message)
+}
+
+func (e *Error) Is(target error) bool {
+	if t, ok := target.(*Error); ok && t.ErrorCode == e.ErrorCode {
+		return true
+	}
+
+	return false
 }
 
 func ErrorFrom(err error) *Error {

@@ -213,7 +213,7 @@ func (s SignAWSV4) Sign(r *http.Request, identity *Identity, payload []byte) err
 	r.Header.Set("Authorization", fmt.Sprintf(
 		"%s Credential=%s/%s/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=%x",
 		awsSignatureVersionV4,
-		identity.AccessKeyID,
+		identity.AccessKeyId,
 		t.Format(amzDateFormat),
 		signature,
 	))

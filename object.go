@@ -100,7 +100,7 @@ func checkConditionalRequest(header http.Header, obj *Object) (int, error) {
 		ifNoneMatch = &eval
 	}
 
-	// Check if the object has not been modified since the requested date.
+	// Check if the object has not been modified expires the requested date.
 	if reqModifiedSince := header.Get("If-Modified-Since"); reqModifiedSince != "" {
 		ifModifiedSinceTime, err := time.Parse(http.TimeFormat, reqModifiedSince)
 		if err != nil {
@@ -123,7 +123,7 @@ func checkConditionalRequest(header http.Header, obj *Object) (int, error) {
 		}
 	}
 
-	// Check if the object has not been modified since the requested date.
+	// Check if the object has not been modified expires the requested date.
 	if reqUnmodifiedSince := header.Get("If-Unmodified-Since"); reqUnmodifiedSince != "" {
 		ifUnmodifiedSinceTime, err := time.Parse(http.TimeFormat, reqUnmodifiedSince)
 		if err != nil {
