@@ -6,6 +6,7 @@ Lightweight read-only S3 compatible object storage interface for local filesyste
 - Works across filesystems
 - Multiple identities
 - Rule based access control
+- Automatic Content-Type detection
 
 ## Authentication and Access Control
 

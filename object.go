@@ -60,18 +60,17 @@ func urlPathObjectKey(urlPath string) (string, error) {
 }
 
 func unwrapFsError(err error) *Error {
-	for unwrap := err; unwrap != nil; unwrap = errors.Unwrap(unwrap) {
-		switch {
-		case os.IsNotExist(unwrap):
-			return &Error{
-				ErrorCode: NoSuchKey,
-				Message:   "The specified object key does not exist.",
-			}
-		case os.IsPermission(unwrap):
-			return &Error{
-				ErrorCode: AccessDenied,
-				Message:   "You do not have permission to access this object.",
-			}
+	if errors.Is(err, os.ErrNotExist) {
+		return &Error{
+			ErrorCode: NoSuchKey,
+			Message:   "The specified object key does not exist.",
+		}
+	}
+
+	if errors.Is(err, os.ErrPermission) {
+		return &Error{
+			ErrorCode: AccessDenied,
+			Message:   "You do not have permission to access this object.",
 		}
 	}
 
@@ -247,6 +246,17 @@ func stat(ctx *RequestContext, key string) (*Object, error) {
 		return nil, unwrapFsError(err)
 	}
 
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, unwrapFsError(err)
+	}
+
+	if !fi.Mode().IsRegular() {
+		// If file is not a regular file, then pretend the file does not exist.
+		return nil, unwrapFsError(os.ErrNotExist)
+	}
+
 	contentType, mustRefresh := guessContentType(f)
 
 	if mustRefresh {
@@ -255,12 +265,6 @@ func stat(ctx *RequestContext, key string) (*Object, error) {
 		if err != nil {
 			return nil, unwrapFsError(err)
 		}
-	}
-
-	fi, err := f.Stat()
-	if err != nil {
-		_ = f.Close()
-		return nil, unwrapFsError(err)
 	}
 
 	obj := &Object{
