@@ -23,15 +23,20 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 		return ErrorFrom(err)
 	}
 
-	obj, err := stat(ctx, key)
-	if err != nil {
-		return ErrorFrom(err)
+	// Try to stat the object first, to allow authentication context with the object.
+	obj, statErr := stat(ctx, key)
+	var objCtx PolicyContextVars = NullContext{}
+	if obj != nil {
+		defer obj.Close()
+		objCtx = obj
 	}
 
-	defer obj.Close()
-
-	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), obj); err != nil {
+	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), objCtx); err != nil {
 		return err
+	}
+
+	if statErr != nil {
+		return ErrorFrom(statErr)
 	}
 
 	var (

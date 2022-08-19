@@ -13,18 +13,23 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 		return nil
 	}
 
-	obj, err := stat(ctx, key)
-	if err != nil {
+	// Try to stat the object first, to allow authentication context with the object.
+	obj, statErr := stat(ctx, key)
+	var objCtx PolicyContextVars = NullContext{}
+	if obj != nil {
+		_ = obj.Close()
+		objCtx = obj
+	}
+
+	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), objCtx); err != nil {
 		// HEAD request that errors contains no response body
-		ctx.SendPlain(ErrorFrom(err).StatusCode)
+		ctx.SendPlain(err.StatusCode)
 		return nil
 	}
 
-	_ = obj.Close()
-
-	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), obj); err != nil {
+	if statErr != nil {
 		// HEAD request that errors contains no response body
-		ctx.SendPlain(err.StatusCode)
+		ctx.SendPlain(ErrorFrom(statErr).StatusCode)
 		return nil
 	}
 

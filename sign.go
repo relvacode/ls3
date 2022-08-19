@@ -23,6 +23,7 @@ type Signer interface {
 	// Verify verifies the authorization and request signature present in the HTTP request.
 	// Verify should return a non-nil error on verification failure, ideally this should contain the underlying type *Error.
 	// If Verify reads data from r.Body, it must ensure that the data can be re-read from r if Verify returns a nil error.
+	// If the request is not signed using the Signer's algorithm then it shall return nil, nil.
 	Verify(r *http.Request, provider IdentityProvider) (*Identity, error)
 }
 

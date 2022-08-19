@@ -354,10 +354,16 @@ func (s SignAWSV4) VerifyQuery(r *http.Request, provider IdentityProvider) (*Ide
 }
 
 func (s SignAWSV4) Verify(r *http.Request, provider IdentityProvider) (*Identity, error) {
-	// If X-Amz-Algorithm is provided in the request then use query parameter based authorization
-	if r.URL.Query().Get(xAmzAlgorithm) != "" {
+	// If X-Amz-Signature is provided in the request URL query then use query parameter based authorization
+	if r.URL.Query().Get(xAmzSignature) != "" {
 		return s.VerifyQuery(r, provider)
 	}
 
-	return s.VerifyHeaders(r, provider)
+	// If Authorization is provided in the request header then used header based authorization.
+	if r.Header.Get("Authorization") != "" {
+		return s.VerifyHeaders(r, provider)
+	}
+
+	// Return no identity.
+	return nil, nil
 }

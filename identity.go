@@ -11,6 +11,11 @@ import (
 	"time"
 )
 
+const (
+	// IdentityUnauthenticated is a special AccessKeyId for unauthenticated requests.
+	IdentityUnauthenticated = "UNAUTHENTICATED"
+)
+
 var ErrMissingAccessKeyId = &Error{
 	ErrorCode: InvalidAccessKeyId,
 	Message:   "The AWS access key ID that you provided does not exist in our records.",
@@ -114,9 +119,6 @@ func (fp *FileIdentityProvider) load() (Keyring, error) {
 	for i, identity := range identities {
 		if identity.AccessKeyId == "" {
 			return nil, fmt.Errorf("identity %d: missing AccessKeyId", i)
-		}
-		if identity.SecretAccessKey == "" {
-			return nil, fmt.Errorf("identity %d (%s): missing SecretAccessKey", i, identity.AccessKeyId)
 		}
 
 		_, ok := keyring[identity.AccessKeyId]

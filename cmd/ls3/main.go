@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/jessevdk/go-flags"
 	"github.com/relvacode/interrupt"
 	"github.com/relvacode/ls3"
@@ -24,8 +25,9 @@ import (
 const ls3StartupTemplate = `
 [Lightweight Object Storage Server]
 Version           {{ .Version }}
-Directory         {{ .AbsPath }}{{ if .MultiBucket }}/[*]{{ end }}
+Directory         {{ .AbsPath }}{{ if .MultiBucket }}{{ .Sep }}[*]{{ end }}
 Endpoint          http://{{if .Domain }}{{ .Domain }}{{ else }}{{ .Host }}{{ end }}:{{ .Port }}
+Public Access     {{ .PublicAccess }}
 Access Key ID     {{ .AccessKeyId }}
 Secret Access Key {{ .SecretAccessKey }}
 
@@ -80,6 +82,7 @@ type Command struct {
 	SecretAccessKey  string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
 	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY" description:"Read the global server access policy from this file."`
 	IdentityFile     string `long:"identities" env:"IDENTITIES" description:"Read additional identities from this file."`
+	PublicAccess     bool   `long:"public-access" env:"PUBLIC_ACCESS" description:"Enable public access to all resources provided by this server. When enabled, adds UNAUTHENTICATED to the default policy. The behaviour of the UNAUTHENTICATED identity can still be managed through a custom identity or the global policy"`
 
 	Positional struct {
 		Path string `required:"true" description:"The root directory to serve"`
@@ -139,7 +142,7 @@ func Main(log *zap.Logger) error {
 		cmd.SecretAccessKey = SecureRandStringBase64(36)
 	}
 
-	rootKeyring := ls3.Keyring{
+	defaultKeyring := ls3.Keyring{
 		// The default identity root (provided directly on the command line or generated automatically)
 		// always has full access to the system unless otherwise denied by a global policy.
 		cmd.AccessKeyId: &ls3.Identity{
@@ -153,9 +156,20 @@ func Main(log *zap.Logger) error {
 				},
 			},
 		},
+		ls3.IdentityUnauthenticated: &ls3.Identity{
+			Name:        ls3.IdentityUnauthenticated,
+			AccessKeyId: ls3.IdentityUnauthenticated,
+			Policy: []*ls3.PolicyStatement{
+				{
+					Deny:     !cmd.PublicAccess,
+					Action:   []ls3.Action{"*"},
+					Resource: []ls3.Resource{"*"},
+				},
+			},
+		},
 	}
 
-	var identityProvider ls3.IdentityProvider = rootKeyring
+	var identityProvider ls3.IdentityProvider = defaultKeyring
 
 	if cmd.IdentityFile != "" {
 		fromFile, err := ls3.NewFileIdentityProvider(log, cmd.IdentityFile, time.Minute*5)
@@ -163,7 +177,8 @@ func Main(log *zap.Logger) error {
 			return err
 		}
 
-		identityProvider = ls3.MultiIdentityProvider{rootKeyring, fromFile}
+		// Setup a MultiIdentityProvider to read from file then the defaultKeyring.
+		identityProvider = ls3.MultiIdentityProvider{fromFile, defaultKeyring}
 	}
 
 	absPath, err := filepath.Abs(cmd.Positional.Path)
@@ -179,8 +194,10 @@ func Main(log *zap.Logger) error {
 	_ = t.Execute(os.Stderr, map[string]interface{}{
 		"Version":         getBuildVersion(info),
 		"AbsPath":         absPath,
+		"Sep":             string(os.PathSeparator),
 		"Host":            host,
 		"Port":            port,
+		"PublicAccess":    cmd.PublicAccess,
 		"Domain":          cmd.Domain,
 		"MultiBucket":     cmd.MultiBucket,
 		"AccessKeyId":     cmd.AccessKeyId,
@@ -216,7 +233,7 @@ func Main(log *zap.Logger) error {
 	}()
 
 	go func() {
-		log.Info("Start HTTP server")
+		log.Info(fmt.Sprintf("Start HTTP server on %s", server.Addr))
 		exit <- server.ListenAndServe()
 	}()
 

@@ -55,17 +55,24 @@ func (ctx *RequestContext) Get(k string) (string, bool) {
 // CheckAccess will first verify that the request meets the global policy,
 // if that succeeds it will then check the identity specific PolicyStatement.
 func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars PolicyContextVars) *Error {
+	ctx.Logger = ctx.Logger.With(
+		zap.String("action", string(action)),
+		zap.String("resource", string(resource)),
+	)
+
 	policyContext := JoinContext(ctx, vars)
 
 	// Check global policy first
 	err := EvaluatePolicy(action, resource, ctx.globalPolicy, policyContext)
 	if err != nil {
+		ctx.Logger.Error("Access to resource is denied by global policy")
 		return err
 	}
 
 	// Check if identity specific policy matches request
 	err = EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
 	if err != nil {
+		ctx.Logger.Error("Access to resource is denied by identity specific policy")
 		return err
 	}
 
@@ -211,7 +218,17 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log = s.log.With(
+	// Identity not present in the request.
+	// Ask the identity provider to provide for IdentityUnauthenticated
+	if ctx.Identity == nil {
+		ctx.Identity, err = s.identities.Get(IdentityUnauthenticated)
+		if err != nil {
+			ctx.SendKnownError(ErrorFrom(err))
+			return
+		}
+	}
+
+	ctx.Logger = ctx.Logger.With(
 		zap.String("identity", ctx.Identity.Name),
 	)
 
