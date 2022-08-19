@@ -139,9 +139,10 @@ func Main(log *zap.Logger) error {
 	}
 
 	keyring := ls3.Keyring{
-		// The default identity (provided directly on the command line)
+		// The default identity root (provided directly on the command line or generated automatically)
 		// always has full access to the system unless otherwise denied by a global policy.
 		cmd.AccessKeyId: &ls3.Identity{
+			Name:            "root",
 			AccessKeyID:     cmd.AccessKeyId,
 			SecretAccessKey: cmd.SecretAccessKey,
 			Policy: []*ls3.PolicyStatement{

@@ -43,6 +43,8 @@ func (ctx *RequestContext) Get(k string) (string, bool) {
 		return ctx.RemoteIP.String(), true
 	case "aws:SecureTransport":
 		return strconv.FormatBool(ctx.Secure), true
+	case "aws:username":
+		return ctx.Identity.Name, true
 	default:
 		return "", false
 	}
@@ -210,7 +212,7 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	log = s.log.With(
-		zap.String("identity", ctx.Identity.AccessKeyID),
+		zap.String("identity", ctx.Identity.Name),
 	)
 
 	var ok bool

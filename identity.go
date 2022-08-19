@@ -1,6 +1,7 @@
 package ls3
 
 type Identity struct {
+	Name            string
 	AccessKeyID     string
 	SecretAccessKey string
 	Policy          []*PolicyStatement
