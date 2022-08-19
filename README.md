@@ -45,7 +45,7 @@ identity is one that has an empty `AccessKeyId`.
 
 By default, the `public` identity is denied access to everything unless you enable public access.
 
-When public access is not enabled, the `public` identity is configured as such:
+When public access is not enabled, the public identity is configured as such:
 
 ```json
 {
@@ -60,6 +60,10 @@ When public access is not enabled, the `public` identity is configured as such:
   ]
 }
 ```
+
+You can override this behaviour by configuring your own public identity.
+When you configure a public identity this overrides the behaviour set by allow public access, and is up to you to deny
+access if desired.
 
 ### Policies
 
