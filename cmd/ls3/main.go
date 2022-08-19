@@ -79,8 +79,8 @@ type Command struct {
 	Domain           string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
 	AccessKeyId      string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
 	SecretAccessKey  string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
-	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY" description:"Read the global server access policy from this file."`
-	IdentityFile     string `long:"identities" env:"IDENTITIES" description:"Read additional identities from this file."`
+	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY_FILE" description:"Read the global server access policy from this file."`
+	CredentialsFile  string `long:"credentials" env:"CREDENTIALS_FILE" description:"Read credentials from this file."`
 	PublicAccess     bool   `long:"public-access" env:"PUBLIC_ACCESS" description:"Enable public access to all resources provided by this server. When enabled, adds UNAUTHENTICATED to the default policy. The behaviour of the UNAUTHENTICATED identity can still be managed through a custom identity or the global policy"`
 
 	Positional struct {
@@ -170,8 +170,8 @@ func Main(log *zap.Logger) error {
 
 	var identityProvider ls3.IdentityProvider = defaultKeyring
 
-	if cmd.IdentityFile != "" {
-		fromFile, err := ls3.NewFileIdentityProvider(log, cmd.IdentityFile, time.Minute*5)
+	if cmd.CredentialsFile != "" {
+		fromFile, err := ls3.NewFileIdentityProvider(log, cmd.CredentialsFile, time.Minute*5)
 		if err != nil {
 			return err
 		}
