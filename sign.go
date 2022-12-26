@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -32,6 +33,27 @@ func sumHmacSha256(secret, data []byte) []byte {
 	h.Write(data)
 
 	return h.Sum(nil)
+}
+
+var timeFormats = []string{
+	amzDateTimeFormat,
+	http.TimeFormat,
+	time.RFC850,
+	time.ANSIC,
+}
+
+func ParseAmzTime(text string) (t time.Time, err error) {
+	for _, layout := range timeFormats {
+		t, err = time.Parse(layout, text)
+		if err == nil {
+			return
+		}
+	}
+	err = &Error{
+		ErrorCode: InvalidRequest,
+		Message:   "Invalid format of X-Amz-Date.",
+	}
+	return
 }
 
 func encodePath(pathName string) string {

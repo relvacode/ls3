@@ -230,12 +230,9 @@ func (s SignAWSV4) VerifyHeaders(r *http.Request, provider IdentityProvider) (*I
 		}
 	}
 
-	at, err := time.Parse(amzDateTimeFormat, date)
+	at, err := ParseAmzTime(date)
 	if err != nil {
-		return nil, &Error{
-			ErrorCode: InvalidRequest,
-			Message:   "Invalid format of X-Amz-Date.",
-		}
+		return nil, err
 	}
 
 	auth, err := ParseAuthorizationHeader(r.Header.Get("Authorization"))

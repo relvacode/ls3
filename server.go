@@ -186,18 +186,18 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	rw.Header().Set("x-amz-request-id", requestId.String())
 
+	var remoteIP net.IP
+	if remoteIpStr, _, splitHostErr := net.SplitHostPort(r.RemoteAddr); splitHostErr == nil {
+		remoteIP = net.ParseIP(remoteIpStr)
+	}
+
 	log := s.log.With(
 		zap.String("request-id", requestId.String()),
 		zap.String("http-method", r.Method),
 		zap.String("http-uri", r.URL.RequestURI()),
 		zap.String("http-user-agent", r.Header.Get("User-Agent")),
-		zap.String("remote-addr", r.RemoteAddr),
+		zap.String("remote-addr", remoteIP.String()),
 	)
-
-	var remoteIP net.IP
-	if remoteIpStr, _, splitHostErr := net.SplitHostPort(r.RemoteAddr); splitHostErr == nil {
-		remoteIP = net.ParseIP(remoteIpStr)
-	}
 
 	ctx := &RequestContext{
 		Logger:  log,
