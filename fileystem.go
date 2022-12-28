@@ -3,7 +3,7 @@ package ls3
 import "io/fs"
 
 type BucketFilesystemProvider interface {
-	// ListBuckets lists all available buckets in the provider.
+	// ListBuckets lists all available filesystemProvider in the provider.
 	ListBuckets() ([]string, error)
 
 	// Open returns a filesystem for a given bucket name.
@@ -36,7 +36,7 @@ func (p *SubdirBucketFilesystem) ListBuckets() ([]string, error) {
 	if err != nil {
 		return nil, &Error{
 			ErrorCode: InternalError,
-			Message:   "Unable to list buckets at this time.",
+			Message:   "Unable to list filesystemProvider at this time.",
 		}
 	}
 

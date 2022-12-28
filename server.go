@@ -67,6 +67,8 @@ func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars Po
 	// Check global policy first
 	err := EvaluatePolicy(action, resource, ctx.globalPolicy, policyContext)
 	if err != nil {
+		statApiPolicyDenials.WithLabelValues((string)(action), (string)(resource), ctx.Identity.Name, ctx.RemoteIP.String()).Add(1)
+
 		ctx.Logger.Error("Access to resource is denied by global policy")
 		return err
 	}
@@ -74,9 +76,13 @@ func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars Po
 	// Check if identity specific policy matches request
 	err = EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
 	if err != nil {
+		statApiCall.WithLabelValues((string)(action), (string)(resource), ctx.Identity.Name, ctx.RemoteIP.String()).Add(1)
+
 		ctx.Logger.Error("Access to resource is denied by identity specific policy")
 		return err
 	}
+
+	statApiCall.WithLabelValues((string)(action), (string)(resource), ctx.Identity.Name, ctx.RemoteIP.String()).Add(1)
 
 	return nil
 }
@@ -143,40 +149,84 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 
 type Method func(ctx *RequestContext) *Error
 
-func NewServer(log *zap.Logger, signer Signer, identities IdentityProvider, buckets BucketFilesystemProvider, domain string, globalPolicy []*PolicyStatement) *Server {
+type ServerOptions struct {
+	Log          *zap.Logger
+	Signer       Signer
+	Identity     IdentityProvider
+	Filesystem   BucketFilesystemProvider
+	Domain       string
+	GlobalPolicy []*PolicyStatement
+}
+
+func NewServer(opts *ServerOptions) *Server {
 	var domainComponents []string
-	if len(domain) > 0 {
-		domainComponents = strings.Split(domain, ".")
+	if len(opts.Domain) > 0 {
+		domainComponents = strings.Split(opts.Domain, ".")
 	}
 	return &Server{
-		log:          log,
-		signer:       signer,
-		identities:   identities,
-		buckets:      buckets,
-		domain:       domainComponents,
-		globalPolicy: globalPolicy,
-		uidGen:       uuid.New,
+		log:                opts.Log,
+		signer:             opts.Signer,
+		identities:         opts.Identity,
+		filesystemProvider: opts.Filesystem,
+		domain:             domainComponents,
+		globalPolicy:       opts.GlobalPolicy,
+		uidGen:             uuid.New,
 	}
 }
 
 type Server struct {
-	log          *zap.Logger
-	signer       Signer
-	identities   IdentityProvider
-	buckets      BucketFilesystemProvider
-	domain       []string
-	globalPolicy []*PolicyStatement
+	log                *zap.Logger
+	signer             Signer
+	identities         IdentityProvider
+	filesystemProvider BucketFilesystemProvider
+	domain             []string
+	globalPolicy       []*PolicyStatement
 	// uidGen describes the function that generates request UUID
 	uidGen func() uuid.UUID
 }
 
-func (s *Server) method(method string, ctx *RequestContext, f Method) {
-	ctx.Logger = ctx.Logger.With(zap.String("method", method))
-
-	err := f(ctx)
-	if err != nil {
-		ctx.SendKnownError(err)
+func (s *Server) getMethodForRequestContext(ctx *RequestContext) (Method, bool) {
+	// Non-bucket methods
+	if ctx.Bucket == "" {
+		switch {
+		case ctx.Request.Method == http.MethodGet && ctx.Request.URL.Path == "/":
+			return s.ListBuckets, true
+		default:
+			return nil, false
+		}
 	}
+
+	if ctx.Filesystem == nil {
+		return nil, false
+	}
+
+	switch ctx.Request.Method {
+	case http.MethodHead:
+		if ctx.Request.URL.Path == "/" {
+			return s.HeadBucket, true
+		}
+
+		return s.HeadObject, true
+
+	case http.MethodGet:
+
+		if _, ok := ctx.Request.URL.Query()["location"]; ok {
+			return s.GetBucketLocation, true
+		}
+
+		if ctx.Request.URL.Path == "/" {
+			switch ctx.Request.URL.Query().Get("list-type") {
+			case "2":
+				return s.ListObjectsV2, true
+			default:
+				return s.ListObjects, true
+			}
+		}
+
+		return s.GetObject, true
+	}
+
+	return nil, false
 }
 
 func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
@@ -235,66 +285,32 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	)
 
 	var ok bool
-	ctx.Bucket, ok, err = bucketFromRequest(r, s.domain)
+	ctx.Bucket, ok, err = bucketFromRequest(ctx.Request, s.domain)
 	if err != nil {
 		ctx.SendKnownError(ErrorFrom(err))
 		return
 	}
 
-	// Non-bucket methods
-	if !ok {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/":
-			s.method("ListBuckets", ctx, s.ListBuckets)
+	if ok {
+		ctx.Filesystem, err = s.filesystemProvider.Open(ctx.Bucket)
+		if err != nil {
+			ctx.SendKnownError(ErrorFrom(err))
 			return
 		}
+	}
 
+	requestMethod, ok := s.getMethodForRequestContext(ctx)
+	if !ok {
 		ctx.SendKnownError(&Error{
 			ErrorCode: MethodNotAllowed,
 			Message:   "The specified method is not allowed against this resource.",
 		})
-	}
-
-	ctx.Filesystem, err = s.buckets.Open(ctx.Bucket)
-	if err != nil {
-		ctx.SendKnownError(ErrorFrom(err))
 		return
 	}
 
-	switch r.Method {
-	case http.MethodHead:
-		if r.URL.Path == "/" {
-			s.method("HeadBucket", ctx, s.HeadBucket)
-			return
-		}
-
-		s.method("HeadObject", ctx, s.HeadObject)
-		return
-	case http.MethodGet:
-
-		if _, ok := r.URL.Query()["location"]; ok {
-			s.method("GetBucketLocation", ctx, s.GetBucketLocation)
-			return
-		}
-
-		if r.URL.Path == "/" {
-			switch r.URL.Query().Get("list-type") {
-			case "2":
-				s.method("ListObjectsV2", ctx, s.ListObjectsV2)
-				return
-			default:
-				s.method("ListObjects", ctx, s.ListObjects)
-				return
-			}
-
-		}
-
-		s.method("GetObject", ctx, s.GetObject)
+	requestErr := requestMethod(ctx)
+	if requestErr != nil {
+		ctx.SendKnownError(requestErr)
 		return
 	}
-
-	ctx.SendKnownError(&Error{
-		ErrorCode: MethodNotAllowed,
-		Message:   "The specified method is not allowed against this resource.",
-	})
 }

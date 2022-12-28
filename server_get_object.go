@@ -80,6 +80,10 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 	modQueryResponseHeader(query, header, "response-content-encoding", "Content-Encoding")
 
 	// Write the response
-	_, _ = io.Copy(ctx.SendPlain(responseCode), obj)
+	bytesSent, _ := io.Copy(ctx.SendPlain(responseCode), obj)
+
+	// Update statistics
+	statBytesTransferredOut.WithLabelValues(ctx.Bucket, key, ctx.Identity.Name, ctx.RemoteIP.String()).Add(float64(bytesSent))
+
 	return nil
 }

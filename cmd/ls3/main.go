@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/jessevdk/go-flags"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/relvacode/interrupt"
 	"github.com/relvacode/ls3"
 	"go.uber.org/zap"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sync/atomic"
 	"text/template"
 	"time"
 )
@@ -74,14 +76,68 @@ func readPolicyFromFile(f string) ([]*ls3.PolicyStatement, error) {
 	return acl, nil
 }
 
+func NewServerPool(ctx context.Context, log *zap.Logger) *ServerPool {
+	ctx, cancel := context.WithCancel(ctx)
+	return &ServerPool{
+		ctx:                ctx,
+		cancel:             cancel,
+		log:                log,
+		serversAllInactive: make(chan struct{}),
+	}
+}
+
+type ServerPool struct {
+	ctx                context.Context
+	cancel             context.CancelFunc
+	log                *zap.Logger
+	serversActive      int32
+	serversAllInactive chan struct{}
+}
+
+// Start a new HTTP server in the pool
+func (p *ServerPool) Start(server *http.Server) {
+	atomic.AddInt32(&p.serversActive, 1)
+	go func() {
+		defer func() {
+			p.cancel()
+
+			if atomic.AddInt32(&p.serversActive, -1) == 0 {
+				close(p.serversAllInactive)
+			}
+		}()
+
+		p.log.Info(fmt.Sprintf("Start HTTP server on %s", server.Addr))
+
+		err := server.ListenAndServe()
+		if err != nil {
+			p.log.Error("HTTP server stopped", zap.Error(err))
+		}
+	}()
+	go func() {
+		<-p.ctx.Done()
+
+		timeout, cancel := context.WithTimeout(context.Background(), time.Second*10)
+		defer cancel()
+
+		_ = server.Shutdown(timeout)
+	}()
+}
+
+// Wait for all active servers to shut down
+func (p *ServerPool) Wait() {
+	<-p.serversAllInactive
+	p.log.Info("All servers stopped")
+}
+
 type Command struct {
-	ListenAddr       string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
-	Domain           string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
-	AccessKeyId      string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
-	SecretAccessKey  string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
-	GlobalPolicyFile string `long:"global-policy" env:"GLOBAL_POLICY_FILE" description:"Read the global server access policy from this file."`
-	CredentialsFile  string `long:"credentials" env:"CREDENTIALS_FILE" description:"Read credentials from this file."`
-	PublicAccess     bool   `long:"public-access" env:"PUBLIC_ACCESS" description:"Enable public access to all resources provided by this server. When enabled, adds UNAUTHENTICATED to the default policy. The behaviour of the UNAUTHENTICATED identity can still be managed through a custom identity or the global policy"`
+	ListenAddr        string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
+	MetricsListenAddr string `long:"metrics-listen-addr" env:"METRICS_LISTEN_ADDRESS" default:"127.0.0.1:9001" description:"HTTP listen address for the metrics server"`
+	Domain            string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
+	AccessKeyId       string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
+	SecretAccessKey   string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
+	GlobalPolicyFile  string `long:"global-policy" env:"GLOBAL_POLICY_FILE" description:"Read the global server access policy from this file."`
+	CredentialsFile   string `long:"credentials" env:"CREDENTIALS_FILE" description:"Read credentials from this file."`
+	PublicAccess      bool   `long:"public-access" env:"PUBLIC_ACCESS" description:"Enable public access to all resources provided by this server. When enabled, adds UNAUTHENTICATED to the default policy. The behaviour of the UNAUTHENTICATED identity can still be managed through a custom identity or the global policy"`
 
 	Positional struct {
 		Path string `required:"true" description:"The root directory to serve"`
@@ -202,38 +258,36 @@ func Main(log *zap.Logger) error {
 		"SecretAccessKey": cmd.SecretAccessKey,
 	})
 
-	fileSystem := os.DirFS(absPath)
-
 	var (
-		ctx     = interrupt.Context(context.Background())
-		exit    = make(chan error, 1)
-		handler = ls3.NewServer(log, ls3.SignAWSV4{}, identityProvider, &ls3.SubdirBucketFilesystem{FS: fileSystem}, cmd.Domain, globalPolicy)
-		server  = &http.Server{
-			Addr:    cmd.ListenAddr,
-			Handler: handler,
+		ctx           = interrupt.Context(context.Background())
+		serverPool    = NewServerPool(ctx, log)
+		serverOptions = &ls3.ServerOptions{
+			Log:          log,
+			Signer:       ls3.SignAWSV4{},
+			Identity:     identityProvider,
+			Domain:       cmd.Domain,
+			GlobalPolicy: globalPolicy,
+			Filesystem: &ls3.SubdirBucketFilesystem{
+				FS: os.DirFS(absPath),
+			},
 		}
 	)
 
-	go func() {
-		<-ctx.Done()
+	serverPool.Start(&http.Server{
+		Addr:    cmd.ListenAddr,
+		Handler: ls3.NewServer(serverOptions),
+	})
 
-		timeout, cancel := context.WithTimeout(context.Background(), time.Second*10)
-		defer cancel()
-
-		_ = server.Shutdown(timeout)
-	}()
-
-	go func() {
-		log.Info(fmt.Sprintf("Start HTTP server on %s", server.Addr))
-		exit <- server.ListenAndServe()
-	}()
-
-	err = <-exit
-	if err == http.ErrServerClosed {
-		err = nil
+	if cmd.MetricsListenAddr != "" {
+		serverPool.Start(&http.Server{
+			Addr:    cmd.MetricsListenAddr,
+			Handler: promhttp.HandlerFor(ls3.StatRegistry, promhttp.HandlerOpts{}),
+		})
 	}
 
-	return err
+	serverPool.Wait()
+
+	return nil
 }
 
 func main() {
