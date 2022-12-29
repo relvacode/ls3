@@ -8,10 +8,25 @@ import (
 var (
 	StatRegistry = prometheus.NewRegistry()
 
+	statApiError = promauto.With(StatRegistry).NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "ls3",
+			Subsystem: "api",
+			Name:      "error",
+			Help:      "Total count of API errors by error code",
+		},
+		[]string{
+			"identity",
+			"client_ip",
+			"error_code",
+		},
+	)
 	statApiPolicyDenials = promauto.With(StatRegistry).NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "ApiPolicyDenials",
-			Help: "Total count of policy denied API calls",
+			Namespace: "ls3",
+			Subsystem: "api",
+			Name:      "policy_denials",
+			Help:      "Total count of policy denied API calls",
 		},
 		[]string{
 			"operation",
@@ -22,8 +37,10 @@ var (
 	)
 	statApiCall = promauto.With(StatRegistry).NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "ApiOperation",
-			Help: "Total count of policy permitted API calls",
+			Namespace: "ls3",
+			Subsystem: "api",
+			Name:      "operations",
+			Help:      "Total count of policy permitted API calls",
 		},
 		[]string{
 			"operation",
@@ -34,8 +51,9 @@ var (
 	)
 	statBytesTransferredOut = promauto.With(StatRegistry).NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "BytesTransferredOut",
-			Help: "Number of bytes transferred out by GetObject",
+			Namespace: "ls3",
+			Name:      "bytes_transferred_out",
+			Help:      "Number of bytes transferred out by GetObject",
 		},
 		[]string{
 			"bucket",

@@ -121,14 +121,13 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		ID:           requestId,
 		RemoteIP:     clientIP,
 		Secure:       clientTLSEnabled,
+		Identity:     PreAuthenticationIdentity,
 		globalPolicy: s.globalPolicy,
 		rw:           rw,
 	}
 
-	var err error
-
 	// Verify the request
-	ctx.Identity, err = s.signer.Verify(r, s.identities)
+	signatureIdentity, err := s.signer.Verify(r, s.identities)
 	if err != nil {
 		ctx.SendKnownError(ErrorFrom(err))
 		return
@@ -136,14 +135,15 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 
 	// Identity not present in the request.
 	// Ask the identity provider to provide for IdentityUnauthenticatedPublic
-	if ctx.Identity == nil {
-		ctx.Identity, err = s.identities.Get(IdentityUnauthenticatedPublic)
+	if signatureIdentity == nil {
+		signatureIdentity, err = s.identities.Get(IdentityUnauthenticatedPublic)
 		if err != nil {
 			ctx.SendKnownError(ErrorFrom(err))
 			return
 		}
 	}
 
+	ctx.Identity = signatureIdentity
 	ctx.Logger = ctx.Logger.With(
 		zap.String("identity", ctx.Identity.Name),
 	)

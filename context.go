@@ -139,6 +139,8 @@ func (ctx *RequestContext) SendKnownError(err *Error) {
 		RequestID string `xml:"RequestId"`
 	}
 
+	statApiError.WithLabelValues(ctx.Identity.Name, ctx.RemoteIP.String(), err.Code).Add(1)
+
 	ctx.SendXML(err.StatusCode, &ErrorPayload{
 		Error:     *err,
 		Resource:  ctx.Request.URL.Path,

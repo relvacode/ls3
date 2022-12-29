@@ -28,6 +28,19 @@ type Identity struct {
 	Policy          []*PolicyStatement
 }
 
+// PreAuthenticationIdentity is used in logging as the initial identity given to a new request context.
+// It always denies access to all resources
+var PreAuthenticationIdentity = &Identity{
+	Name: "PreAuthentication",
+	Policy: []*PolicyStatement{
+		{
+			Deny:     true,
+			Resource: []Resource{"*"},
+			Action:   []Action{"*"},
+		},
+	},
+}
+
 type IdentityProvider interface {
 	// Get returns the identity associated with the provided access key ID.
 	// It should return ErrMissingAccessKeyId if the given access key does not exist.

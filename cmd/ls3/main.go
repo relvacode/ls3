@@ -279,9 +279,11 @@ func Main(log *zap.Logger) error {
 	)
 
 	if cmd.TrustRealIP {
+		log.Warn("Trusting HTTP header X-Real-Ip")
 		serverOptions.ClientIP = security.ForwardedRealIP
 	}
 	if cmd.TrustForwardedProto {
+		log.Warn("Trusting HTTP header X-Forwarded-Proto")
 		serverOptions.ClientTLS = security.ForwardedClientTLS
 	}
 
