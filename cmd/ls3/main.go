@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/relvacode/interrupt"
 	"github.com/relvacode/ls3"
+	"github.com/relvacode/ls3/security"
 	"go.uber.org/zap"
 	"io"
 	"math/rand"
@@ -130,14 +131,16 @@ func (p *ServerPool) Wait() {
 }
 
 type Command struct {
-	ListenAddr        string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
-	MetricsListenAddr string `long:"metrics-listen-addr" env:"METRICS_LISTEN_ADDRESS" default:"127.0.0.1:9001" description:"HTTP listen address for the metrics server"`
-	Domain            string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
-	AccessKeyId       string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
-	SecretAccessKey   string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
-	GlobalPolicyFile  string `long:"global-policy" env:"GLOBAL_POLICY_FILE" description:"Read the global server access policy from this file."`
-	CredentialsFile   string `long:"credentials" env:"CREDENTIALS_FILE" description:"Read credentials from this file."`
-	PublicAccess      bool   `long:"public-access" env:"PUBLIC_ACCESS" description:"Enable public access to all resources provided by this server. When enabled, adds UNAUTHENTICATED to the default policy. The behaviour of the UNAUTHENTICATED identity can still be managed through a custom identity or the global policy"`
+	ListenAddr          string `long:"listen-addr" env:"LISTEN_ADDRESS" default:"127.0.0.1:9000" description:"HTTP listen address"`
+	MetricsListenAddr   string `long:"metrics-listen-addr" env:"METRICS_LISTEN_ADDRESS" default:"127.0.0.1:9001" description:"HTTP listen address for the metrics server"`
+	Domain              string `long:"domain" env:"DOMAIN" description:"Host style addressing on this domain"`
+	AccessKeyId         string `long:"access-key-id" env:"ACCESS_KEY_ID" description:"Set the access key id. Generated if not provided."`
+	SecretAccessKey     string `long:"secret-access-key" env:"SECRET_ACCESS_KEY" description:"Set the secret access key. Generated if not provided. If provided, access key id must also be provided"`
+	GlobalPolicyFile    string `long:"global-policy" env:"GLOBAL_POLICY_FILE" description:"Read the global server access policy from this file."`
+	CredentialsFile     string `long:"credentials" env:"CREDENTIALS_FILE" description:"Read credentials from this file."`
+	PublicAccess        bool   `long:"public-access" env:"PUBLIC_ACCESS" description:"Enable public access to all resources provided by this server. When enabled, adds UNAUTHENTICATED to the default policy. The behaviour of the UNAUTHENTICATED identity can still be managed through a custom identity or the global policy"`
+	TrustRealIP         bool   `long:"http-trust-real-ip" env:"HTTP_TRUST_REAL_IP" description:"Trust the value of X-Real-Ip. Only use with an intermediate proxy"`
+	TrustForwardedProto bool   `long:"http-trust-forwarded-proto" env:"HTTP_TRUST_FORWARDED_PROTO" description:"Trust the value of X-Forwarded-Proto. Only use with an intermediate proxy"`
 
 	Positional struct {
 		Path string `required:"true" description:"The root directory to serve"`
@@ -267,15 +270,25 @@ func Main(log *zap.Logger) error {
 			Identity:     identityProvider,
 			Domain:       cmd.Domain,
 			GlobalPolicy: globalPolicy,
+			ClientIP:     security.DirectClientIP,
+			ClientTLS:    security.DirectClientTLS,
 			Filesystem: &ls3.SubdirBucketFilesystem{
 				FS: os.DirFS(absPath),
 			},
 		}
 	)
 
+	if cmd.TrustRealIP {
+		serverOptions.ClientIP = security.ForwardedRealIP
+	}
+	if cmd.TrustForwardedProto {
+		serverOptions.ClientTLS = security.ForwardedClientTLS
+	}
+
 	serverPool.Start(&http.Server{
-		Addr:    cmd.ListenAddr,
-		Handler: ls3.NewServer(serverOptions),
+		Addr:        cmd.ListenAddr,
+		Handler:     ls3.NewServer(serverOptions),
+		ConnContext: security.ConnContext,
 	})
 
 	if cmd.MetricsListenAddr != "" {

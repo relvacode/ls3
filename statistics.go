@@ -17,7 +17,7 @@ var (
 			"operation",
 			"resource",
 			"identity",
-			"remote_addr",
+			"client_ip",
 		},
 	)
 	statApiCall = promauto.With(StatRegistry).NewCounterVec(
@@ -29,7 +29,7 @@ var (
 			"operation",
 			"resource",
 			"identity",
-			"remote_addr",
+			"client_ip",
 		},
 	)
 	statBytesTransferredOut = promauto.With(StatRegistry).NewCounterVec(
@@ -41,7 +41,7 @@ var (
 			"bucket",
 			"object",
 			"identity",
-			"remote_addr",
+			"client_ip",
 		},
 	)
 )

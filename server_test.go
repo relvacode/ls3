@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/google/uuid"
 	"github.com/psanford/memfs"
+	"github.com/relvacode/ls3/security"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"io"
@@ -16,12 +17,21 @@ import (
 )
 
 func testServer() *Server {
-	srv := NewServer(zap.NewNop(), SignAWSV4{}, testIdentityProvider{}, &SingleBucketFilesystem{FS: memfs.New()}, "", []*PolicyStatement{
-		{
-			Resource: []Resource{"*"},
-			Action:   []Action{"*"},
+	opts := &ServerOptions{
+		Log:        zap.NewNop(),
+		Signer:     SignAWSV4{},
+		Identity:   testIdentityProvider{},
+		Filesystem: &SingleBucketFilesystem{FS: memfs.New()},
+		ClientIP:   security.DirectClientIP,
+		ClientTLS:  security.DirectClientTLS,
+		GlobalPolicy: []*PolicyStatement{
+			{
+				Resource: []Resource{"*"},
+				Action:   []Action{"*"},
+			},
 		},
-	})
+	}
+	srv := NewServer(opts)
 	uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
 	srv.uidGen = func() uuid.UUID {
 		return uid
