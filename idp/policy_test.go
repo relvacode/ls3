@@ -1,6 +1,8 @@
-package ls3
+package idp
 
 import (
+	"errors"
+	"github.com/relvacode/ls3/exception"
 	"github.com/stretchr/testify/assert"
 	"net"
 	"testing"
@@ -103,17 +105,17 @@ func TestEvaluatePolicy(t *testing.T) {
 
 	t.Run("deny_default_action", func(t *testing.T) {
 		result := EvaluatePolicy("test:Undefined", "a/b/c", acl, MapContext{})
-		assertIsError(t, result, AccessDenied)
+		assert.True(t, errors.Is(result, &exception.Error{ErrorCode: exception.AccessDenied}))
 	})
 
 	t.Run("deny_explicit", func(t *testing.T) {
 		result := EvaluatePolicy("test:ExplicitDeny", "this", acl, MapContext{})
-		assertIsError(t, result, AccessDenied)
+		assert.True(t, errors.Is(result, &exception.Error{ErrorCode: exception.AccessDenied}))
 	})
 
 	t.Run("deny_empty_resource", func(t *testing.T) {
 		result := EvaluatePolicy("test:EmptyResource", "this", acl, MapContext{})
-		assertIsError(t, result, AccessDenied)
+		assert.True(t, errors.Is(result, &exception.Error{ErrorCode: exception.AccessDenied}))
 	})
 }
 

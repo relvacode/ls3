@@ -6,6 +6,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"io"
 	"net/http"
 	"net/textproto"
@@ -66,8 +68,8 @@ func payloadSha256Hex(r *http.Request, contentSha256 string) ([]byte, error) {
 		computedPayloadSha := computedPayloadShaHasher.Sum(nil)
 
 		if payload.Len() > 0 && subtle.ConstantTimeCompare(computedPayloadSha, contentShaRaw) != 1 {
-			return nil, &Error{
-				ErrorCode: BadDigest,
+			return nil, &exception.Error{
+				ErrorCode: exception.BadDigest,
 				Message:   "The Content-MD5 or checksum value that you specified did not match what the server received.",
 			}
 		}
@@ -181,7 +183,7 @@ func (s SignAWSV4) computeStringToSign(at time.Time, region string, canonicalReq
 	return b.Bytes()
 }
 
-func (s SignAWSV4) computeSigningKey(at time.Time, region string, identity *Identity) []byte {
+func (s SignAWSV4) computeSigningKey(at time.Time, region string, identity *idp.Identity) []byte {
 	var signed = sumHmacSha256([]byte("AWS4"+identity.SecretAccessKey), at.AppendFormat(nil, amzDateFormat))
 	signed = sumHmacSha256(signed, []byte(region))
 	signed = sumHmacSha256(signed, []byte("s3"))
@@ -190,7 +192,7 @@ func (s SignAWSV4) computeSigningKey(at time.Time, region string, identity *Iden
 	return signed
 }
 
-func (s SignAWSV4) Sign(r *http.Request, identity *Identity, payload []byte) error {
+func (s SignAWSV4) Sign(r *http.Request, identity *idp.Identity, payload []byte) error {
 	h := sha256.New()
 	h.Write(payload)
 	r.Header.Set(xAmzContextSha256, fmt.Sprintf("%x", h.Sum(nil)))
@@ -221,7 +223,7 @@ func (s SignAWSV4) Sign(r *http.Request, identity *Identity, payload []byte) err
 	return nil
 }
 
-func (s SignAWSV4) VerifyHeaders(r *http.Request, provider IdentityProvider) (*Identity, error) {
+func (s SignAWSV4) VerifyHeaders(r *http.Request, provider idp.Provider) (*idp.Identity, error) {
 	at, err := ParseAmzTime(r.Header.Get(xAmzDate))
 	if err != nil {
 		return nil, err
@@ -229,8 +231,8 @@ func (s SignAWSV4) VerifyHeaders(r *http.Request, provider IdentityProvider) (*I
 
 	auth, err := ParseAuthorizationHeader(r.Header.Get("Authorization"))
 	if err != nil {
-		return nil, &Error{
-			ErrorCode: InvalidToken,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidToken,
 			Message:   err.Error(),
 		}
 	}
@@ -252,8 +254,8 @@ func (s SignAWSV4) VerifyHeaders(r *http.Request, provider IdentityProvider) (*I
 
 	// Check request signature is equal to the computed signature
 	if subtle.ConstantTimeCompare(signature, auth.Signature) != 1 {
-		return nil, &Error{
-			ErrorCode: SignatureDoesNotMatch,
+		return nil, &exception.Error{
+			ErrorCode: exception.SignatureDoesNotMatch,
 			Message:   "The request signature that the server calculated does not match the signature that you provided.",
 		}
 	}
@@ -261,20 +263,20 @@ func (s SignAWSV4) VerifyHeaders(r *http.Request, provider IdentityProvider) (*I
 	return identity, nil
 }
 
-func (s SignAWSV4) VerifyQuery(r *http.Request, provider IdentityProvider) (*Identity, error) {
+func (s SignAWSV4) VerifyQuery(r *http.Request, provider idp.Provider) (*idp.Identity, error) {
 	var q = r.URL.Query()
 
 	if queryAlgorithm := q.Get(xAmzAlgorithm); queryAlgorithm != awsSignatureVersionV4 {
-		return nil, &Error{
-			ErrorCode: InvalidRequest,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "The request is using the wrong signature version. Use AWS4-HMAC-SHA256 (Signature Version 4).",
 		}
 	}
 
 	at, err := ParseAmzTime(q.Get(xAmzDate))
 	if err != nil {
-		return nil, &Error{
-			ErrorCode: InvalidRequest,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "Invalid format of X-Amz-Date.",
 		}
 	}
@@ -284,15 +286,15 @@ func (s SignAWSV4) VerifyQuery(r *http.Request, provider IdentityProvider) (*Ide
 	expires := time.Second * time.Duration(expiresInt)
 
 	if expires < minimumPresignedExpires || expires > maximumPresignedExpiry {
-		return nil, &Error{
-			ErrorCode: InvalidRequest,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "Invalid value for X-Amz-Expires.",
 		}
 	}
 
 	if s.now().After(at.Add(expires)) {
-		return nil, &Error{
-			ErrorCode: ExpiredToken,
+		return nil, &exception.Error{
+			ErrorCode: exception.ExpiredToken,
 			Message:   "The provided token has expired.",
 		}
 	}
@@ -325,8 +327,8 @@ func (s SignAWSV4) VerifyQuery(r *http.Request, provider IdentityProvider) (*Ide
 
 	// Check request signature is equal to the computed signature
 	if subtle.ConstantTimeCompare(signature, requestSignature) != 1 {
-		return nil, &Error{
-			ErrorCode: SignatureDoesNotMatch,
+		return nil, &exception.Error{
+			ErrorCode: exception.SignatureDoesNotMatch,
 			Message:   "The request signature that the server calculated does not match the signature that you provided.",
 		}
 	}
@@ -334,7 +336,7 @@ func (s SignAWSV4) VerifyQuery(r *http.Request, provider IdentityProvider) (*Ide
 	return identity, nil
 }
 
-func (s SignAWSV4) Verify(r *http.Request, provider IdentityProvider) (*Identity, error) {
+func (s SignAWSV4) Verify(r *http.Request, provider idp.Provider) (*idp.Identity, error) {
 	// If X-Amz-Signature is provided in the request URL query then use query parameter based authorization
 	if r.URL.Query().Get(xAmzSignature) != "" {
 		return s.VerifyQuery(r, provider)

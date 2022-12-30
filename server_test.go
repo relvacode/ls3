@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/google/uuid"
 	"github.com/psanford/memfs"
+	"github.com/relvacode/ls3/idp"
 	"github.com/relvacode/ls3/security"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -20,14 +21,14 @@ func testServer() *Server {
 	opts := &ServerOptions{
 		Log:        zap.NewNop(),
 		Signer:     SignAWSV4{},
-		Identity:   testIdentityProvider{},
+		Identity:   idp.MockProvider{},
 		Filesystem: &SingleBucketFilesystem{FS: memfs.New()},
 		ClientIP:   security.DirectClientIP,
 		ClientTLS:  security.DirectClientTLS,
-		GlobalPolicy: []*PolicyStatement{
+		GlobalPolicy: []*idp.PolicyStatement{
 			{
-				Resource: []Resource{"*"},
-				Action:   []Action{"*"},
+				Resource: []idp.Resource{"*"},
+				Action:   []idp.Action{"*"},
 			},
 		},
 	}
@@ -64,7 +65,7 @@ func testSignedRequest(signer Signer, method, path, query string, headers http.H
 		req.Header.Set("Content-Length", strconv.Itoa(len(payload)))
 	}
 
-	_ = signer.Sign(req, TestIdentity, payload)
+	_ = signer.Sign(req, idp.TestIdentity, payload)
 
 	return req
 }

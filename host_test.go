@@ -1,6 +1,8 @@
 package ls3
 
 import (
+	"errors"
+	"github.com/relvacode/ls3/exception"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"net/url"
@@ -112,7 +114,7 @@ func Test_bucketFromRequest(t *testing.T) {
 		_, ok, err := bucketFromRequest(req, []string{"domain"})
 		assert.Error(t, err)
 		assert.False(t, ok)
-		assertIsError(t, err, InvalidRequest)
+		assert.True(t, errors.Is(err, &exception.Error{ErrorCode: exception.InvalidRequest}))
 	})
 
 	t.Run("host_not_enough_components", func(t *testing.T) {
@@ -126,7 +128,7 @@ func Test_bucketFromRequest(t *testing.T) {
 		_, ok, err := bucketFromRequest(req, []string{"domain", "net"})
 		assert.Error(t, err)
 		assert.False(t, ok)
-		assertIsError(t, err, InvalidRequest)
+		assert.True(t, errors.Is(err, &exception.Error{ErrorCode: exception.InvalidRequest}))
 	})
 
 	t.Run("host_not_intersect_components", func(t *testing.T) {
@@ -140,6 +142,6 @@ func Test_bucketFromRequest(t *testing.T) {
 		_, ok, err := bucketFromRequest(req, []string{"domain", "net"})
 		assert.Error(t, err)
 		assert.False(t, ok)
-		assertIsError(t, err, InvalidRequest)
+		assert.True(t, errors.Is(err, &exception.Error{ErrorCode: exception.InvalidRequest}))
 	})
 }

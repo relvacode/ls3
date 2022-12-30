@@ -1,6 +1,7 @@
 package ls3
 
 import (
+	"github.com/relvacode/ls3/exception"
 	"net"
 	"net/http"
 	"strings"
@@ -38,8 +39,8 @@ func bucketFromRequest(r *http.Request, domain []string) (string, bool, error) {
 
 	hostComponents := strings.Split(host, ".")
 	if len(hostComponents) < len(domain) {
-		return "", false, &Error{
-			ErrorCode: InvalidRequest,
+		return "", false, &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "Invalid request hostname.",
 		}
 	}
@@ -50,8 +51,8 @@ func bucketFromRequest(r *http.Request, domain []string) (string, bool, error) {
 
 	for i >= 0 {
 		if domain[i] != hostComponents[j] {
-			return "", false, &Error{
-				ErrorCode: InvalidRequest,
+			return "", false, &exception.Error{
+				ErrorCode: exception.InvalidRequest,
 				Message:   "The requested hostname is not recognised.",
 			}
 		}
@@ -69,8 +70,8 @@ func bucketFromRequest(r *http.Request, domain []string) (string, bool, error) {
 		return hostComponents[0], true, nil
 	default:
 		// Too many components in host domain
-		return "", false, &Error{
-			ErrorCode: InvalidRequest,
+		return "", false, &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "Invalid request hostname.",
 		}
 	}

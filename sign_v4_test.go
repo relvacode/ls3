@@ -2,6 +2,9 @@ package ls3
 
 import (
 	"bytes"
+	"errors"
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"github.com/stretchr/testify/assert"
 	"net/http"
 	"testing"
@@ -35,7 +38,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, string(comput
 }
 
 func TestSignAWSV4_VerifyHeaders(t *testing.T) {
-	_, err := SignAWSV4{}.VerifyHeaders(testHeaderSignRequest(), testIdentityProvider{})
+	_, err := SignAWSV4{}.VerifyHeaders(testHeaderSignRequest(), idp.MockProvider{})
 	assert.NoError(t, err)
 }
 
@@ -47,7 +50,7 @@ func TestSignAWSV4_VerifyHeaders_UnsignedPayload(t *testing.T) {
 	req.Header.Set("x-amz-date", "20130524T000000Z")
 	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=host;x-amz-content-sha256;x-amz-date,Signature=b1a076428fa68c2c42202ee5a5718b8207f725e451e2157d6b1c393e01fc2e68")
 
-	_, err := SignAWSV4{}.Verify(req, testIdentityProvider{})
+	_, err := SignAWSV4{}.Verify(req, idp.MockProvider{})
 	assert.NoError(t, err)
 }
 
@@ -61,7 +64,7 @@ func TestSignAWSV4_VerifyQuery(t *testing.T) {
 			return time.Date(2013, 5, 24, 0, 0, 0, 0, time.UTC)
 		}
 
-		_, err := sign.VerifyQuery(req, testIdentityProvider{})
+		_, err := sign.VerifyQuery(req, idp.MockProvider{})
 		assert.NoError(t, err)
 	})
 
@@ -74,8 +77,8 @@ func TestSignAWSV4_VerifyQuery(t *testing.T) {
 			return time.Date(2013, 6, 24, 0, 0, 0, 0, time.UTC)
 		}
 
-		_, err := sign.VerifyQuery(req, testIdentityProvider{})
+		_, err := sign.VerifyQuery(req, idp.MockProvider{})
 		assert.Error(t, err)
-		assertIsError(t, err, ExpiredToken)
+		assert.True(t, errors.Is(err, &exception.Error{ErrorCode: exception.ExpiredToken}))
 	})
 }

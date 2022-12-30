@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/gotd/contrib/http_range"
 	"github.com/h2non/filetype"
+	"github.com/relvacode/ls3/exception"
 	"io"
 	"io/fs"
 	"net/http"
@@ -46,8 +47,8 @@ func (obj *Object) Get(k string) (string, bool) {
 
 func urlPathObjectKey(urlPath string) (string, error) {
 	if len(urlPath) < 1 {
-		return "", &Error{
-			ErrorCode: InvalidArgument,
+		return "", &exception.Error{
+			ErrorCode: exception.InvalidArgument,
 			Message:   "Object key must be at least 1 character",
 		}
 	}
@@ -59,23 +60,23 @@ func urlPathObjectKey(urlPath string) (string, error) {
 	return urlPath, nil
 }
 
-func unwrapFsError(err error) *Error {
+func unwrapFsError(err error) *exception.Error {
 	if errors.Is(err, os.ErrNotExist) {
-		return &Error{
-			ErrorCode: NoSuchKey,
+		return &exception.Error{
+			ErrorCode: exception.NoSuchKey,
 			Message:   "The specified object key does not exist.",
 		}
 	}
 
 	if errors.Is(err, os.ErrPermission) {
-		return &Error{
-			ErrorCode: AccessDenied,
+		return &exception.Error{
+			ErrorCode: exception.AccessDenied,
 			Message:   "You do not have permission to access this object.",
 		}
 	}
 
-	return &Error{
-		ErrorCode: InvalidObjectState,
+	return &exception.Error{
+		ErrorCode: exception.InvalidObjectState,
 		Message:   "An undefined permanent error occurred accessing this object.",
 	}
 }
@@ -103,8 +104,8 @@ func checkConditionalRequest(header http.Header, obj *Object) (int, error) {
 	if reqModifiedSince := header.Get("If-Modified-Since"); reqModifiedSince != "" {
 		ifModifiedSinceTime, err := time.Parse(http.TimeFormat, reqModifiedSince)
 		if err != nil {
-			return 0, &Error{
-				ErrorCode: InvalidArgument,
+			return 0, &exception.Error{
+				ErrorCode: exception.InvalidArgument,
 				Message:   "Invalid value for If-Modified-Since.",
 			}
 		}
@@ -126,8 +127,8 @@ func checkConditionalRequest(header http.Header, obj *Object) (int, error) {
 	if reqUnmodifiedSince := header.Get("If-Unmodified-Since"); reqUnmodifiedSince != "" {
 		ifUnmodifiedSinceTime, err := time.Parse(http.TimeFormat, reqUnmodifiedSince)
 		if err != nil {
-			return 0, &Error{
-				ErrorCode: InvalidArgument,
+			return 0, &exception.Error{
+				ErrorCode: exception.InvalidArgument,
 				Message:   "Invalid value for If-Unmodified-Since.",
 			}
 		}
@@ -174,8 +175,8 @@ func limitRange(r *http.Request, obj *Object) error {
 	ranges, err := http_range.ParseRange(rangeHeader, obj.Size)
 	// Only one range request is supported
 	if err != nil || len(ranges) != 1 {
-		return &Error{
-			ErrorCode: InvalidRange,
+		return &exception.Error{
+			ErrorCode: exception.InvalidRange,
 			Message:   "The requested range is not valid for the request. Try another range.",
 		}
 	}
@@ -185,16 +186,16 @@ func limitRange(r *http.Request, obj *Object) error {
 	// Seek object to target start range
 	seek, ok := obj.ReadCloser.(io.Seeker)
 	if !ok {
-		return &Error{
-			ErrorCode: InvalidRequest,
+		return &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "Ranged requests are not supported for this object.",
 		}
 	}
 
 	_, err = seek.Seek(obj.Range.Start, 0)
 	if err != nil {
-		return &Error{
-			ErrorCode: InvalidRange,
+		return &exception.Error{
+			ErrorCode: exception.InvalidRange,
 			Message:   "Unable to access object at start range.",
 		}
 	}

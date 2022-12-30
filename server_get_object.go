@@ -1,6 +1,8 @@
 package ls3
 
 import (
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,26 +19,26 @@ func modQueryResponseHeader(q url.Values, hdr http.Header, queryKey, headerKey s
 	hdr.Set(headerKey, queryValue)
 }
 
-func (s *Server) GetObject(ctx *RequestContext) *Error {
+func (s *Server) GetObject(ctx *RequestContext) *exception.Error {
 	key, err := urlPathObjectKey(ctx.Request.URL.Path)
 	if err != nil {
-		return ErrorFrom(err)
+		return exception.ErrorFrom(err)
 	}
 
 	// Try to stat the object first, to allow authentication context with the object.
 	obj, statErr := stat(ctx, key)
-	var objCtx PolicyContextVars = NullContext{}
+	var objCtx idp.PolicyContextVars = idp.NullContext{}
 	if obj != nil {
 		defer obj.Close()
 		objCtx = obj
 	}
 
-	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), objCtx); err != nil {
+	if err := ctx.CheckAccess(idp.GetObject, idp.Resource(ctx.Bucket+"/"+key), objCtx); err != nil {
 		return err
 	}
 
 	if statErr != nil {
-		return ErrorFrom(statErr)
+		return exception.ErrorFrom(statErr)
 	}
 
 	var (
@@ -50,7 +52,7 @@ func (s *Server) GetObject(ctx *RequestContext) *Error {
 	// Conditional Response
 	conditional, err := checkConditionalRequest(ctx.Request.Header, obj)
 	if err != nil {
-		return ErrorFrom(err)
+		return exception.ErrorFrom(err)
 	}
 	if conditional > 0 {
 		ctx.SendPlain(conditional)

@@ -2,21 +2,23 @@ package ls3
 
 import (
 	"github.com/google/uuid"
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"github.com/relvacode/ls3/security"
 	"go.uber.org/zap"
 	"net/http"
 	"strings"
 )
 
-type Method func(ctx *RequestContext) *Error
+type Method func(ctx *RequestContext) *exception.Error
 
 type ServerOptions struct {
 	Log          *zap.Logger
 	Signer       Signer
-	Identity     IdentityProvider
+	Identity     idp.Provider
 	Filesystem   BucketFilesystemProvider
 	Domain       string
-	GlobalPolicy []*PolicyStatement
+	GlobalPolicy []*idp.PolicyStatement
 	ClientIP     security.ClientIP
 	ClientTLS    security.ClientTLS
 }
@@ -42,10 +44,10 @@ func NewServer(opts *ServerOptions) *Server {
 type Server struct {
 	log                *zap.Logger
 	signer             Signer
-	identities         IdentityProvider
+	identities         idp.Provider
 	filesystemProvider BucketFilesystemProvider
 	domain             []string
-	globalPolicy       []*PolicyStatement
+	globalPolicy       []*idp.PolicyStatement
 	remoteIP           security.ClientIP
 	remoteTLS          security.ClientTLS
 	// uidGen describes the function that generates request UUID
@@ -121,7 +123,7 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		ID:           requestId,
 		RemoteIP:     clientIP,
 		Secure:       clientTLSEnabled,
-		Identity:     PreAuthenticationIdentity,
+		Identity:     idp.PreAuthenticationIdentity,
 		globalPolicy: s.globalPolicy,
 		rw:           rw,
 	}
@@ -129,16 +131,16 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	// Verify the request
 	signatureIdentity, err := s.signer.Verify(r, s.identities)
 	if err != nil {
-		ctx.SendKnownError(ErrorFrom(err))
+		ctx.SendKnownError(exception.ErrorFrom(err))
 		return
 	}
 
 	// Identity not present in the request.
 	// Ask the identity provider to provide for IdentityUnauthenticatedPublic
 	if signatureIdentity == nil {
-		signatureIdentity, err = s.identities.Get(IdentityUnauthenticatedPublic)
+		signatureIdentity, err = s.identities.Get(idp.IdentityUnauthenticatedPublic)
 		if err != nil {
-			ctx.SendKnownError(ErrorFrom(err))
+			ctx.SendKnownError(exception.ErrorFrom(err))
 			return
 		}
 	}
@@ -151,22 +153,22 @@ func (s *Server) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	var ok bool
 	ctx.Bucket, ok, err = bucketFromRequest(ctx.Request, s.domain)
 	if err != nil {
-		ctx.SendKnownError(ErrorFrom(err))
+		ctx.SendKnownError(exception.ErrorFrom(err))
 		return
 	}
 
 	if ok {
 		ctx.Filesystem, err = s.filesystemProvider.Open(ctx.Bucket)
 		if err != nil {
-			ctx.SendKnownError(ErrorFrom(err))
+			ctx.SendKnownError(exception.ErrorFrom(err))
 			return
 		}
 	}
 
 	requestMethod, ok := s.getMethodForRequestContext(ctx)
 	if !ok {
-		ctx.SendKnownError(&Error{
-			ErrorCode: MethodNotAllowed,
+		ctx.SendKnownError(&exception.Error{
+			ErrorCode: exception.MethodNotAllowed,
 			Message:   "The specified method is not allowed against this resource.",
 		})
 		return

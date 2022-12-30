@@ -1,33 +1,15 @@
-package ls3
+package idp
 
 import (
 	"bytes"
+	"errors"
+	"github.com/relvacode/ls3/exception"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	"io"
 	"testing"
 	"time"
 )
-
-// TestIdentity is an Identity used in most tests,
-// It uses the reference example identity in the AWS documentation.
-// It allows access to any method.
-var TestIdentity = &Identity{
-	AccessKeyId:     "AKIAIOSFODNN7EXAMPLE",
-	SecretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-	Policy: []*PolicyStatement{
-		{
-			Action:   []Action{"*"},
-			Resource: []Resource{"*"},
-		},
-	},
-}
-
-type testIdentityProvider struct{}
-
-func (testIdentityProvider) Get(_ string) (*Identity, error) {
-	return TestIdentity, nil
-}
 
 func TestMultiIdentityProvider_Get(t *testing.T) {
 	var ring1 = Keyring{
@@ -63,7 +45,7 @@ func TestFileIdentityProvider_Get(t *testing.T) {
 		return io.NopCloser(bytes.NewReader(testFile)), nil
 	}
 
-	fp := &FileIdentityProvider{
+	fp := &FileProvider{
 		open:  testOpener,
 		log:   zap.NewNop(),
 		cache: time.Millisecond * 500,
@@ -72,8 +54,8 @@ func TestFileIdentityProvider_Get(t *testing.T) {
 	_, err := fp.Get("test")
 	assert.NoError(t, err)
 	_, err = fp.Get("nil")
-	assertIsError(t, err, InvalidAccessKeyId)
 
+	assert.True(t, errors.Is(err, &exception.Error{ErrorCode: exception.InvalidAccessKeyId}))
 	assert.Equal(t, 1, timesOpened)
 
 	<-time.After(time.Second)

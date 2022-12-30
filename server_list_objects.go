@@ -2,6 +2,8 @@ package ls3
 
 import (
 	"encoding/xml"
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"net/http"
 	"strconv"
 )
@@ -34,15 +36,15 @@ func (r *ListBucketResult) Get(k string) (string, bool) {
 	}
 }
 
-func (s *Server) ListObjects(ctx *RequestContext) *Error {
+func (s *Server) ListObjects(ctx *RequestContext) *exception.Error {
 	maxKeys, err := listObjectsMaxKeys(ctx.Request)
 	if err != nil {
-		return ErrorFrom(err)
+		return exception.ErrorFrom(err)
 	}
 
 	objectKeyEncoding, err := listObjectsUrlEncodingType(ctx.Request)
 	if err != nil {
-		return ErrorFrom(err)
+		return exception.ErrorFrom(err)
 	}
 
 	var query = ctx.Request.URL.Query()
@@ -55,7 +57,7 @@ func (s *Server) ListObjects(ctx *RequestContext) *Error {
 		EncodingType: objectKeyEncoding,
 	}
 
-	if err := ctx.CheckAccess(ListBucket, Resource(ctx.Bucket), &result); err != nil {
+	if err := ctx.CheckAccess(idp.ListBucket, idp.Resource(ctx.Bucket), &result); err != nil {
 		return err
 	}
 
@@ -67,7 +69,7 @@ func (s *Server) ListObjects(ctx *RequestContext) *Error {
 
 	result.Contents, err = it.PrefixScan(result.Prefix, result.Delimiter, objectKeyEncoding == "url", result.MaxKeys)
 	if err != nil {
-		return ErrorFrom(err)
+		return exception.ErrorFrom(err)
 	}
 
 	result.CommonPrefixes = it.CommonPrefixes()

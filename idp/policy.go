@@ -1,8 +1,9 @@
-package ls3
+package idp
 
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/relvacode/ls3/exception"
 	"net"
 	"strings"
 )
@@ -155,7 +156,7 @@ func (j *joinContext) Get(k string) (string, bool) {
 	return v, true
 }
 
-func JoinContext(parent PolicyContextVars, this PolicyContextVars) *joinContext {
+func JoinContext(parent PolicyContextVars, this PolicyContextVars) PolicyContextVars {
 	return &joinContext{
 		parent:            parent,
 		PolicyContextVars: this,
@@ -386,7 +387,7 @@ func (p *PolicyStatement) AppliesTo(action Action, resource Resource, context Po
 
 // EvaluatePolicy returns true if the given concrete action and resource applies to any of the given policies.
 // The default action is to deny.
-func EvaluatePolicy(action Action, resource Resource, policies []*PolicyStatement, context PolicyContextVars) *Error {
+func EvaluatePolicy(action Action, resource Resource, policies []*PolicyStatement, context PolicyContextVars) *exception.Error {
 	var success bool
 	for _, policy := range policies {
 		// Only interested in explicit denies when at least on policy is successful
@@ -405,8 +406,8 @@ func EvaluatePolicy(action Action, resource Resource, policies []*PolicyStatemen
 	}
 
 	if !success {
-		return &Error{
-			ErrorCode: AccessDenied,
+		return &exception.Error{
+			ErrorCode: exception.AccessDenied,
 			Message:   "You do not have permission to access this resource.",
 		}
 	}

@@ -1,4 +1,4 @@
-package ls3
+package exception
 
 import "fmt"
 
@@ -17,7 +17,6 @@ var (
 	InvalidArgument              = ErrorCode{Code: "InvalidArgument", StatusCode: 400}
 	BadDigest                    = ErrorCode{Code: "BadDigest", StatusCode: 400}
 	NoSuchKey                    = ErrorCode{Code: "NoSuchKey", StatusCode: 404}
-	MissingSecurityHeader        = ErrorCode{Code: "MissingSecurityHeader", StatusCode: 400}
 	InvalidToken                 = ErrorCode{Code: "InvalidToken", StatusCode: 400}
 	InvalidObjectState           = ErrorCode{Code: "InvalidObjectState", StatusCode: 403}
 	InvalidRange                 = ErrorCode{Code: "InvalidRange", StatusCode: 416}

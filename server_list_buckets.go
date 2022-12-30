@@ -1,6 +1,8 @@
 package ls3
 
 import (
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"net/http"
 	"time"
 )
@@ -9,7 +11,7 @@ import (
 // We don't actually know when the bucket was created, but some API consumers can't open a missing date.
 var bucketCreationDate = time.Date(2022, 01, 01, 00, 00, 00, 0, time.UTC)
 
-func (s *Server) ListBuckets(ctx *RequestContext) *Error {
+func (s *Server) ListBuckets(ctx *RequestContext) *exception.Error {
 	type Bucket struct {
 		CreationDate time.Time
 		Name         string
@@ -20,13 +22,13 @@ func (s *Server) ListBuckets(ctx *RequestContext) *Error {
 		}
 	}
 
-	if err := ctx.CheckAccess(ListAllMyBuckets, "", NullContext{}); err != nil {
+	if err := ctx.CheckAccess(idp.ListAllMyBuckets, "", idp.NullContext{}); err != nil {
 		return err
 	}
 
 	buckets, err := s.filesystemProvider.ListBuckets()
 	if err != nil {
-		return ErrorFrom(err)
+		return exception.ErrorFrom(err)
 	}
 
 	var result ListAllMyBucketsResult

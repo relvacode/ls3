@@ -1,6 +1,9 @@
 package ls3
 
-import "io/fs"
+import (
+	"github.com/relvacode/ls3/exception"
+	"io/fs"
+)
 
 type BucketFilesystemProvider interface {
 	// ListBuckets lists all available filesystemProvider in the provider.
@@ -34,8 +37,8 @@ type SubdirBucketFilesystem struct {
 func (p *SubdirBucketFilesystem) ListBuckets() ([]string, error) {
 	entries, err := fs.ReadDir(p.FS, ".")
 	if err != nil {
-		return nil, &Error{
-			ErrorCode: InternalError,
+		return nil, &exception.Error{
+			ErrorCode: exception.InternalError,
 			Message:   "Unable to list filesystemProvider at this time.",
 		}
 	}
@@ -59,16 +62,16 @@ func (p *SubdirBucketFilesystem) ListBuckets() ([]string, error) {
 func (p *SubdirBucketFilesystem) Open(bucket string) (fs.FS, error) {
 	fi, err := fs.Stat(p.FS, bucket)
 	if err != nil || !fi.IsDir() {
-		return nil, &Error{
-			ErrorCode: NoSuchBucket,
+		return nil, &exception.Error{
+			ErrorCode: exception.NoSuchBucket,
 			Message:   "The specified bucket does not exist.",
 		}
 	}
 
 	sub, err := fs.Sub(p.FS, bucket)
 	if err != nil {
-		return nil, &Error{
-			ErrorCode: InvalidBucketState,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidBucketState,
 			Message:   "The request is not valid for the current state of the bucket.",
 		}
 	}

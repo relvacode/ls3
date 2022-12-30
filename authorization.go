@@ -2,6 +2,7 @@ package ls3
 
 import (
 	"encoding/hex"
+	"github.com/relvacode/ls3/exception"
 	"strings"
 	"time"
 )
@@ -24,8 +25,8 @@ func growSlice(b []byte, n int) []byte {
 func ParseCredential(value string) (*Credential, error) {
 	var credentialParts = strings.Split(value, "/")
 	if len(credentialParts) != 5 {
-		return nil, &Error{
-			ErrorCode: InvalidSecurity,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidSecurity,
 			Message:   "The provided security credentials are not valid.",
 		}
 	}
@@ -36,8 +37,8 @@ func ParseCredential(value string) (*Credential, error) {
 	var err error
 	credential.Date, err = time.Parse(amzDateFormat, credentialParts[1])
 	if err != nil {
-		return nil, &Error{
-			ErrorCode: InvalidSecurity,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidSecurity,
 			Message:   "The provided security credentials are not valid.",
 		}
 	}
@@ -78,8 +79,8 @@ func ParseAuthorizationHeader(hdr string) (*Authorization, error) {
 
 	var methodParts = strings.SplitN(hdr, " ", 2)
 	if len(methodParts) < 2 || methodParts[0] != awsSignatureVersionV4 {
-		return nil, &Error{
-			ErrorCode: InvalidRequest,
+		return nil, &exception.Error{
+			ErrorCode: exception.InvalidRequest,
 			Message:   "The request is using the wrong signature version. Use AWS4-HMAC-SHA256 (Signature Version 4).",
 		}
 	}
@@ -88,8 +89,8 @@ func ParseAuthorizationHeader(hdr string) (*Authorization, error) {
 	for _, opt := range requestOptions {
 		var optionParts = strings.SplitN(strings.TrimSpace(opt), "=", 2)
 		if len(optionParts) < 2 {
-			return nil, &Error{
-				ErrorCode: AuthorizationHeaderMalformed,
+			return nil, &exception.Error{
+				ErrorCode: exception.AuthorizationHeaderMalformed,
 				Message:   "The authorization header that you provided is not valid.",
 			}
 		}
@@ -104,8 +105,8 @@ func ParseAuthorizationHeader(hdr string) (*Authorization, error) {
 		case "Credential":
 			cr, err := ParseCredential(value)
 			if err != nil {
-				return nil, &Error{
-					ErrorCode: AuthorizationHeaderMalformed,
+				return nil, &exception.Error{
+					ErrorCode: exception.AuthorizationHeaderMalformed,
 					Message:   "The authorization header that you provided is not valid.",
 				}
 			}
@@ -117,8 +118,8 @@ func ParseAuthorizationHeader(hdr string) (*Authorization, error) {
 			var err error
 			auth.Signature, err = hex.DecodeString(value)
 			if err != nil {
-				return nil, &Error{
-					ErrorCode: AuthorizationHeaderMalformed,
+				return nil, &exception.Error{
+					ErrorCode: exception.AuthorizationHeaderMalformed,
 					Message:   "The authorization header that you provided is not valid.",
 				}
 			}

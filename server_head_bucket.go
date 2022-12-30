@@ -1,12 +1,16 @@
 package ls3
 
-import "net/http"
+import (
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
+	"net/http"
+)
 
 // amzRegion is a constant pretend region for all filesystemProvider provided by this server.
 const amzRegion = "us-east-1"
 
-func (s *Server) HeadBucket(ctx *RequestContext) *Error {
-	err := ctx.CheckAccess(ListBucket, Resource(ctx.Bucket), NullContext{})
+func (s *Server) HeadBucket(ctx *RequestContext) *exception.Error {
+	err := ctx.CheckAccess(idp.ListBucket, idp.Resource(ctx.Bucket), idp.NullContext{})
 	if err != nil {
 		// HEAD returns no body
 		ctx.SendPlain(err.StatusCode)

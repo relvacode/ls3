@@ -2,6 +2,7 @@ package ls3
 
 import (
 	"errors"
+	"github.com/relvacode/ls3/exception"
 	"io/fs"
 	"net/http"
 	"path"
@@ -24,8 +25,8 @@ func listObjectsMaxKeys(r *http.Request) (int, error) {
 	maxKeys, err := strconv.Atoi(maxKeysQuery)
 
 	if err != nil || maxKeys < 0 {
-		return 0, &Error{
-			ErrorCode: InvalidArgument,
+		return 0, &exception.Error{
+			ErrorCode: exception.InvalidArgument,
 			Message:   "Invalid value for max-keys",
 		}
 	}
@@ -40,8 +41,8 @@ func listObjectsUrlEncodingType(r *http.Request) (string, error) {
 	case "":
 		return "", nil
 	default:
-		return "", &Error{
-			ErrorCode: InvalidArgument,
+		return "", &exception.Error{
+			ErrorCode: exception.InvalidArgument,
 			Message:   "Only \"url\" is supported for encoding-type",
 		}
 	}

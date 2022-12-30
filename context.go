@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/xml"
 	"github.com/google/uuid"
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"go.uber.org/zap"
 	"io"
 	"io/fs"
@@ -20,14 +22,14 @@ type RequestContext struct {
 	Bucket     string
 	Filesystem fs.FS
 	Request    *http.Request
-	Identity   *Identity
+	Identity   *idp.Identity
 
 	// The client IP address
 	RemoteIP net.IP
 	// Is this connection secure
 	Secure bool
 
-	globalPolicy []*PolicyStatement
+	globalPolicy []*idp.PolicyStatement
 
 	rw http.ResponseWriter
 	// flag to indicate the context has already tried to encode the original payload.
@@ -45,7 +47,7 @@ func (ctx *RequestContext) Get(k string) (string, bool) {
 	case "aws:username":
 		return ctx.Identity.Name, true
 	case "ls3:authenticated":
-		return strconv.FormatBool(ctx.Identity.AccessKeyId != IdentityUnauthenticatedPublic), true
+		return strconv.FormatBool(ctx.Identity.AccessKeyId != idp.IdentityUnauthenticatedPublic), true
 	default:
 		return "", false
 	}
@@ -55,16 +57,16 @@ func (ctx *RequestContext) Get(k string) (string, bool) {
 // vars are additional PolicyContextVars that will be used in the conditional policy evaluation.
 // CheckAccess will first verify that the request meets the global policy,
 // if that succeeds it will then check the identity specific PolicyStatement.
-func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars PolicyContextVars) *Error {
+func (ctx *RequestContext) CheckAccess(action idp.Action, resource idp.Resource, vars idp.PolicyContextVars) *exception.Error {
 	ctx.Logger = ctx.Logger.With(
 		zap.String("action", string(action)),
 		zap.String("resource", string(resource)),
 	)
 
-	policyContext := JoinContext(ctx, vars)
+	policyContext := idp.JoinContext(ctx, vars)
 
 	// Check global policy first
-	err := EvaluatePolicy(action, resource, ctx.globalPolicy, policyContext)
+	err := idp.EvaluatePolicy(action, resource, ctx.globalPolicy, policyContext)
 	if err != nil {
 		statApiPolicyDenials.WithLabelValues((string)(action), (string)(resource), ctx.Identity.Name, ctx.RemoteIP.String()).Add(1)
 
@@ -73,7 +75,7 @@ func (ctx *RequestContext) CheckAccess(action Action, resource Resource, vars Po
 	}
 
 	// Check if identity specific policy matches request
-	err = EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
+	err = idp.EvaluatePolicy(action, resource, ctx.Identity.Policy, policyContext)
 	if err != nil {
 		statApiCall.WithLabelValues((string)(action), (string)(resource), ctx.Identity.Name, ctx.RemoteIP.String()).Add(1)
 
@@ -114,8 +116,8 @@ func (ctx *RequestContext) SendXML(statusCode int, payload any) {
 		}
 
 		ctx.failedXmlEncode = true
-		ctx.SendKnownError(&Error{
-			ErrorCode: MalformedXML,
+		ctx.SendKnownError(&exception.Error{
+			ErrorCode: exception.MalformedXML,
 			Message:   "The server was unable to XML encode the response.",
 		})
 		return
@@ -129,12 +131,12 @@ func (ctx *RequestContext) SendXML(statusCode int, payload any) {
 }
 
 // SendKnownError replies to the caller with a concrete *Error type using the standard Amazon S3 XML error encoding.
-func (ctx *RequestContext) SendKnownError(err *Error) {
+func (ctx *RequestContext) SendKnownError(err *exception.Error) {
 	ctx.Error(err.Message, zap.String("err-code", err.Code), zap.Error(err))
 
 	type ErrorPayload struct {
 		XMLName xml.Name `xml:"Error"`
-		Error
+		exception.Error
 		Resource  string `xml:"Resource"`
 		RequestID string `xml:"RequestId"`
 	}

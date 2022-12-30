@@ -4,6 +4,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"net/http"
 	"strings"
 	"time"
@@ -19,13 +21,13 @@ const (
 type Signer interface {
 	// Sign computes and signs the given HTTP request using the given request payload and Identity.
 	// payload should be the contents of r.Body.
-	Sign(r *http.Request, identity *Identity, payload []byte) error
+	Sign(r *http.Request, identity *idp.Identity, payload []byte) error
 
 	// Verify verifies the authorization and request signature present in the HTTP request.
 	// Verify should return a non-nil error on verification failure, ideally this should contain the underlying type *Error.
 	// If Verify reads data from r.Body, it must ensure that the data can be re-read from r if Verify returns a nil error.
 	// If the request is not signed using the Signer's algorithm then it shall return nil, nil.
-	Verify(r *http.Request, provider IdentityProvider) (*Identity, error)
+	Verify(r *http.Request, provider idp.Provider) (*idp.Identity, error)
 }
 
 func sumHmacSha256(secret, data []byte) []byte {
@@ -52,8 +54,8 @@ func ParseAmzTime(text string) (t time.Time, err error) {
 		}
 	}
 
-	err = &Error{
-		ErrorCode: InvalidRequest,
+	err = &exception.Error{
+		ErrorCode: exception.InvalidRequest,
 		Message:   "Invalid format of X-Amz-Date.",
 	}
 	return

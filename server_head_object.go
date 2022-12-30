@@ -1,27 +1,29 @@
 package ls3
 
 import (
+	"github.com/relvacode/ls3/exception"
+	"github.com/relvacode/ls3/idp"
 	"net/http"
 	"strconv"
 )
 
-func (s *Server) HeadObject(ctx *RequestContext) *Error {
+func (s *Server) HeadObject(ctx *RequestContext) *exception.Error {
 	key, err := urlPathObjectKey(ctx.Request.URL.Path)
 	if err != nil {
 		// HEAD request that errors contains no response body
-		ctx.SendPlain(ErrorFrom(err).StatusCode)
+		ctx.SendPlain(exception.ErrorFrom(err).StatusCode)
 		return nil
 	}
 
 	// Try to stat the object first, to allow authentication context with the object.
 	obj, statErr := stat(ctx, key)
-	var objCtx PolicyContextVars = NullContext{}
+	var objCtx idp.PolicyContextVars = idp.NullContext{}
 	if obj != nil {
 		_ = obj.Close()
 		objCtx = obj
 	}
 
-	if err := ctx.CheckAccess(GetObject, Resource(ctx.Bucket+"/"+key), objCtx); err != nil {
+	if err := ctx.CheckAccess(idp.GetObject, idp.Resource(ctx.Bucket+"/"+key), objCtx); err != nil {
 		// HEAD request that errors contains no response body
 		ctx.SendPlain(err.StatusCode)
 		return nil
@@ -29,7 +31,7 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 
 	if statErr != nil {
 		// HEAD request that errors contains no response body
-		ctx.SendPlain(ErrorFrom(statErr).StatusCode)
+		ctx.SendPlain(exception.ErrorFrom(statErr).StatusCode)
 		return nil
 	}
 
@@ -42,7 +44,7 @@ func (s *Server) HeadObject(ctx *RequestContext) *Error {
 	conditional, err := checkConditionalRequest(ctx.Request.Header, obj)
 	if err != nil {
 		// HEAD request that errors contains no response body
-		ctx.SendPlain(ErrorFrom(err).StatusCode)
+		ctx.SendPlain(exception.ErrorFrom(err).StatusCode)
 		return nil
 	}
 	if conditional > 0 {

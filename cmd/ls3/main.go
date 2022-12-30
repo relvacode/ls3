@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/relvacode/interrupt"
 	"github.com/relvacode/ls3"
+	"github.com/relvacode/ls3/idp"
 	"github.com/relvacode/ls3/security"
 	"go.uber.org/zap"
 	"io"
@@ -60,7 +61,7 @@ func SecureRandStringBase64(n int) string {
 	return base64.URLEncoding.WithPadding('+').EncodeToString(rawSecret)
 }
 
-func readPolicyFromFile(f string) ([]*ls3.PolicyStatement, error) {
+func readPolicyFromFile(f string) ([]*idp.PolicyStatement, error) {
 	r, err := os.Open(f)
 	if err != nil {
 		return nil, err
@@ -68,7 +69,7 @@ func readPolicyFromFile(f string) ([]*ls3.PolicyStatement, error) {
 
 	defer r.Close()
 
-	var acl []*ls3.PolicyStatement
+	var acl []*idp.PolicyStatement
 	err = json.NewDecoder(r).Decode(&acl)
 	if err != nil {
 		return nil, err
@@ -171,7 +172,7 @@ func Main(log *zap.Logger) error {
 		return err
 	}
 
-	var globalPolicy []*ls3.PolicyStatement
+	var globalPolicy []*idp.PolicyStatement
 
 	// Read global policy from file (if defined)
 	if cmd.GlobalPolicyFile != "" {
@@ -182,10 +183,10 @@ func Main(log *zap.Logger) error {
 	} else {
 		// Otherwise, the global policy is allow all.
 		// This has the effect of using identity specific policies only.
-		globalPolicy = []*ls3.PolicyStatement{
+		globalPolicy = []*idp.PolicyStatement{
 			{
-				Resource: []ls3.Resource{"*"},
-				Action:   []ls3.Action{"*"},
+				Resource: []idp.Resource{"*"},
+				Action:   []idp.Action{"*"},
 			},
 		}
 	}
@@ -200,43 +201,43 @@ func Main(log *zap.Logger) error {
 		cmd.SecretAccessKey = SecureRandStringBase64(36)
 	}
 
-	defaultKeyring := ls3.Keyring{
+	defaultKeyring := idp.Keyring{
 		// The default identity root (provided directly on the command line or generated automatically)
 		// always has full access to the system unless otherwise denied by a global policy.
-		cmd.AccessKeyId: &ls3.Identity{
+		cmd.AccessKeyId: &idp.Identity{
 			Name:            "root",
 			AccessKeyId:     cmd.AccessKeyId,
 			SecretAccessKey: cmd.SecretAccessKey,
-			Policy: []*ls3.PolicyStatement{
+			Policy: []*idp.PolicyStatement{
 				{
-					Action:   []ls3.Action{"*"},
-					Resource: []ls3.Resource{"*"},
+					Action:   []idp.Action{"*"},
+					Resource: []idp.Resource{"*"},
 				},
 			},
 		},
-		ls3.IdentityUnauthenticatedPublic: &ls3.Identity{
+		idp.IdentityUnauthenticatedPublic: &idp.Identity{
 			Name:        "public",
-			AccessKeyId: ls3.IdentityUnauthenticatedPublic,
-			Policy: []*ls3.PolicyStatement{
+			AccessKeyId: idp.IdentityUnauthenticatedPublic,
+			Policy: []*idp.PolicyStatement{
 				{
 					Deny:     !cmd.PublicAccess,
-					Action:   []ls3.Action{"*"},
-					Resource: []ls3.Resource{"*"},
+					Action:   []idp.Action{"*"},
+					Resource: []idp.Resource{"*"},
 				},
 			},
 		},
 	}
 
-	var identityProvider ls3.IdentityProvider = defaultKeyring
+	var identityProvider idp.Provider = defaultKeyring
 
 	if cmd.CredentialsFile != "" {
-		fromFile, err := ls3.NewFileIdentityProvider(log, cmd.CredentialsFile, time.Minute*5)
+		fromFile, err := idp.NewFileProvider(log, cmd.CredentialsFile, time.Minute*5)
 		if err != nil {
 			return err
 		}
 
 		// Setup a MultiIdentityProvider to read from file then the defaultKeyring.
-		identityProvider = ls3.MultiIdentityProvider{fromFile, defaultKeyring}
+		identityProvider = idp.MultiIdentityProvider{fromFile, defaultKeyring}
 	}
 
 	absPath, err := filepath.Abs(cmd.Positional.Path)
