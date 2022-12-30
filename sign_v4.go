@@ -222,15 +222,7 @@ func (s SignAWSV4) Sign(r *http.Request, identity *Identity, payload []byte) err
 }
 
 func (s SignAWSV4) VerifyHeaders(r *http.Request, provider IdentityProvider) (*Identity, error) {
-	date := r.Header.Get(xAmzDate)
-	if date == "" {
-		return nil, &Error{
-			ErrorCode: InvalidArgument,
-			Message:   "Missing x-amz-date header.",
-		}
-	}
-
-	at, err := ParseAmzTime(date)
+	at, err := ParseAmzTime(r.Header.Get(xAmzDate))
 	if err != nil {
 		return nil, err
 	}
@@ -279,15 +271,7 @@ func (s SignAWSV4) VerifyQuery(r *http.Request, provider IdentityProvider) (*Ide
 		}
 	}
 
-	date := q.Get(xAmzDate)
-	if date == "" {
-		return nil, &Error{
-			ErrorCode: InvalidArgument,
-			Message:   "Missing x-amz-date header.",
-		}
-	}
-
-	at, err := time.Parse(amzDateTimeFormat, date)
+	at, err := ParseAmzTime(q.Get(xAmzDate))
 	if err != nil {
 		return nil, &Error{
 			ErrorCode: InvalidRequest,

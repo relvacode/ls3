@@ -43,12 +43,15 @@ var timeFormats = []string{
 }
 
 func ParseAmzTime(text string) (t time.Time, err error) {
-	for _, layout := range timeFormats {
-		t, err = time.Parse(layout, text)
-		if err == nil {
-			return
+	if text != "" {
+		for _, layout := range timeFormats {
+			t, err = time.Parse(layout, text)
+			if err == nil {
+				return
+			}
 		}
 	}
+
 	err = &Error{
 		ErrorCode: InvalidRequest,
 		Message:   "Invalid format of X-Amz-Date.",
