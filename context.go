@@ -130,16 +130,16 @@ func (ctx *RequestContext) SendXML(statusCode int, payload any) {
 	_, _ = b.WriteTo(w)
 }
 
+type ErrorPayload struct {
+	XMLName xml.Name `xml:"Error"`
+	exception.Error
+	Resource  string `xml:"Resource"`
+	RequestID string `xml:"RequestId"`
+}
+
 // SendKnownError replies to the caller with a concrete *Error type using the standard Amazon S3 XML error encoding.
 func (ctx *RequestContext) SendKnownError(err *exception.Error) {
 	ctx.Error(err.Message, zap.String("err-code", err.Code), zap.Error(err))
-
-	type ErrorPayload struct {
-		XMLName xml.Name `xml:"Error"`
-		exception.Error
-		Resource  string `xml:"Resource"`
-		RequestID string `xml:"RequestId"`
-	}
 
 	statApiError.WithLabelValues(ctx.Identity.Name, ctx.RemoteIP.String(), err.Code).Add(1)
 

@@ -38,6 +38,11 @@ func (s *Server) GetObject(ctx *RequestContext) *exception.Error {
 	}
 
 	if statErr != nil {
+		// The request must have ListBucket access to see the real error behind accessing the object
+		if err := ctx.CheckAccess(idp.ListBucket, idp.Resource(ctx.Bucket), objCtx); err != nil {
+			return err
+		}
+
 		return exception.ErrorFrom(statErr)
 	}
 

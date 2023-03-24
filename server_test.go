@@ -3,8 +3,10 @@ package ls3
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"github.com/google/uuid"
 	"github.com/psanford/memfs"
+	"github.com/relvacode/ls3/exception"
 	"github.com/relvacode/ls3/idp"
 	"github.com/relvacode/ls3/security"
 	"github.com/stretchr/testify/assert"
@@ -17,7 +19,7 @@ import (
 	"testing"
 )
 
-func testServer() *Server {
+func testServer(additionalPolicyStatements ...*idp.PolicyStatement) *Server {
 	opts := &ServerOptions{
 		Log:        zap.NewNop(),
 		Signer:     SignAWSV4{},
@@ -25,12 +27,12 @@ func testServer() *Server {
 		Filesystem: &SingleBucketFilesystem{FS: memfs.New()},
 		ClientIP:   security.DirectClientIP,
 		ClientTLS:  security.DirectClientTLS,
-		GlobalPolicy: []*idp.PolicyStatement{
+		GlobalPolicy: append([]*idp.PolicyStatement{
 			{
 				Resource: []idp.Resource{"*"},
 				Action:   []idp.Action{"*"},
 			},
-		},
+		}, additionalPolicyStatements...),
 	}
 	srv := NewServer(opts)
 	uid, _ := uuid.Parse("123e4567-e89b-12d3-a456-426614174000")
@@ -107,4 +109,13 @@ func TestServer(t *testing.T) {
 </Error>`, rw.Body.String())
 		})
 	})
+}
+
+func AssertIsResponseError(t *testing.T, rw *httptest.ResponseRecorder, expect exception.ErrorCode) {
+	assert.Equal(t, expect.StatusCode, rw.Code)
+
+	var resp ErrorPayload
+	err := xml.Unmarshal(rw.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.Equal(t, expect.Code, resp.Code)
 }

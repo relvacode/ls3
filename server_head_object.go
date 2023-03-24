@@ -30,6 +30,13 @@ func (s *Server) HeadObject(ctx *RequestContext) *exception.Error {
 	}
 
 	if statErr != nil {
+		// The request must have ListBucket access to see the real error behind accessing the object
+		if err := ctx.CheckAccess(idp.ListBucket, idp.Resource(ctx.Bucket), objCtx); err != nil {
+			// HEAD request that errors contains no response body
+			ctx.SendPlain(err.StatusCode)
+			return nil
+		}
+
 		// HEAD request that errors contains no response body
 		ctx.SendPlain(exception.ErrorFrom(statErr).StatusCode)
 		return nil
